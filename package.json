@@ -1,0 +1,50 @@
+{
+  "name": "limon-launcher",
+  "version": "1.0.0",
+  "description": "Limon Launcher - Minecraft başlatıcısı",
+  "main": "main.js",
+  "author": "Limon",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "extract-zip": "^2.0.1",
+    "minecraft-launcher-core": "^3.18.0",
+    "msmc": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.limon.launcher",
+    "productName": "Limon Launcher",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Limon-Launcher-Kurulum-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Limon-Launcher-${version}.${ext}"
+    }
+  }
+}

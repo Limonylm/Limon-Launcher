@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Limon Launcher</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="titlebar-brand" id="brand"></div>
+      <div class="titlebar-controls">
+        <button id="btn-min" aria-label="Küçült"><svg viewBox="0 0 12 12"><path d="M2 6h8" /></svg></button>
+        <button id="btn-max" aria-label="Büyüt"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" /></svg></button>
+        <button id="btn-close" class="close" aria-label="Kapat"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg></button>
+      </div>
+    </header>
+    <div class="shell">
+      <nav class="sidebar" id="sidebar"></nav>
+      <main class="main" id="main"></main>
+    </div>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
