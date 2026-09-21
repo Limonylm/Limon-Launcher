@@ -23,7 +23,9 @@ contextBridge.exposeInMainWorld('limon', {
     list: inv('profiles:list'),
     save: inv('profiles:save'),
     remove: inv('profiles:remove'),
-    select: inv('profiles:select')
+    select: inv('profiles:select'),
+    openDir: inv('profiles:open-dir'),
+    cleanInstall: inv('profiles:clean-install')
   },
   settings: {
     get: inv('settings:get'),
@@ -41,6 +43,24 @@ contextBridge.exposeInMainWorld('limon', {
     remove: inv('skins:remove'),
     apply: inv('skins:apply'),
     current: inv('skins:current')
+  },
+  modrinth: {
+    search: inv('modrinth:search'),
+    install: inv('modrinth:install'),
+    installModpack: inv('modrinth:install-modpack')
+  },
+  content: {
+    list: inv('content:list'),
+    remove: inv('content:remove'),
+    toggle: inv('content:toggle'),
+    onProgress: on('content:progress')
+  },
+  update: {
+    check: inv('update:check'),
+    install: inv('update:install'),
+    onAvailable: on('update:available'),
+    onProgress: on('update:progress'),
+    onError: on('update:error')
   },
   capes: {
     set: inv('capes:set')

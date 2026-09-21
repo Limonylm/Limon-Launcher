@@ -46,6 +46,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+const fmtVer = (v) => String(v || '').replace(/\.0$/, '');
 const gb = (mb) => (mb / 1024).toFixed(mb % 1024 ? 1 : 0);
 
 /* ---------- İkonlar ---------- */
@@ -86,7 +87,7 @@ const use3D = () => HAS3D && S.settings.viewer3d !== false;
 
 function applySettings() {
   const root = document.documentElement;
-  root.dataset.accent = S.settings.accent || 'emerald';
+  root.dataset.theme = S.settings.theme || 'lemon';
   root.dataset.motion = S.settings.animations === false ? 'off' : 'on';
 }
 async function setSetting(patch) {
@@ -164,7 +165,7 @@ function avatar(acc) {
 }
 
 /* ---------- 2D skin çizimi ---------- */
-function drawSkin2D(canvas, dataUrl, slim) {
+function drawSkin2D(canvas, dataUrl, slim, back) {
   const img = new Image();
   img.onload = () => {
     const c = canvas.getContext('2d');
@@ -183,19 +184,38 @@ function drawSkin2D(canvas, dataUrl, slim) {
         c.drawImage(img, sx, sy, sw, sh, dx, dy, sw, sh);
       }
     };
-    blit(8, 8, 8, 8, 4, 0);
-    blit(20, 20, 8, 12, 4, 8);
-    blit(44, 20, aw, 12, slim ? 1 : 0, 8);
-    if (legacy) blit(44, 20, aw, 12, 12, 8, true); else blit(36, 52, aw, 12, 12, 8);
-    blit(4, 20, 4, 12, 4, 20);
-    if (legacy) blit(4, 20, 4, 12, 8, 20, true); else blit(20, 52, 4, 12, 8, 20);
-    blit(40, 8, 8, 8, 4, 0);
-    if (!legacy) {
-      blit(20, 36, 8, 12, 4, 8);
-      blit(44, 36, aw, 12, slim ? 1 : 0, 8);
-      blit(52, 52, aw, 12, 12, 8);
-      blit(4, 36, 4, 12, 4, 20);
-      blit(4, 52, 4, 12, 8, 20);
+    if (!back) {
+      // ön yüz
+      blit(8, 8, 8, 8, 4, 0);
+      blit(20, 20, 8, 12, 4, 8);
+      blit(44, 20, aw, 12, slim ? 1 : 0, 8);
+      if (legacy) blit(44, 20, aw, 12, 12, 8, true); else blit(36, 52, aw, 12, 12, 8);
+      blit(4, 20, 4, 12, 4, 20);
+      if (legacy) blit(4, 20, 4, 12, 8, 20, true); else blit(20, 52, 4, 12, 8, 20);
+      blit(40, 8, 8, 8, 4, 0);
+      if (!legacy) {
+        blit(20, 36, 8, 12, 4, 8);
+        blit(44, 36, aw, 12, slim ? 1 : 0, 8);
+        blit(52, 52, aw, 12, 12, 8);
+        blit(4, 36, 4, 12, 4, 20);
+        blit(4, 52, 4, 12, 8, 20);
+      }
+    } else {
+      // arka yüz: sağ/sol yer değiştirir
+      blit(24, 8, 8, 8, 4, 0);
+      blit(32, 20, 8, 12, 4, 8);
+      blit(52, 20, aw, 12, 12, 8);                       // sağ kol (arkadan sağda görünür)
+      if (legacy) blit(52, 20, aw, 12, slim ? 1 : 0, 8, true); else blit(44, 52, aw, 12, slim ? 1 : 0, 8);
+      blit(12, 20, 4, 12, 8, 20);
+      if (legacy) blit(12, 20, 4, 12, 4, 20, true); else blit(28, 52, 4, 12, 4, 20);
+      blit(56, 8, 8, 8, 4, 0);
+      if (!legacy) {
+        blit(32, 36, 8, 12, 4, 8);
+        blit(52, 36, aw, 12, 12, 8);
+        blit(60, 52, aw, 12, slim ? 1 : 0, 8);
+        blit(12, 36, 4, 12, 8, 20);
+        blit(12, 52, 4, 12, 4, 20);
+      }
     }
   };
   img.src = dataUrl;
@@ -460,176 +480,11 @@ function openAccounts() {
   setTimeout(() => nameInput.focus(), 80);
 }
 
-/* ---------- Sürümler ---------- */
-function renderVersions() {
-  loadInstalled().then(() => {
-    if (S.page === 'versions') {
-      // yalnızca "İndirildi" etiketlerini güncelle
-      document.querySelectorAll('[data-ver]').forEach((el) => {
-        el.hidden = !S.installed.includes(el.dataset.ver);
-      });
-    }
-  });
-
-  const tiles = S.profiles.map((p) => {
-    const active = p.id === S.activeProfile;
-    return h('div', {
-      class: 'ver-tile' + (active ? ' active' : ''), tabindex: '0', role: 'button',
-      onclick: async () => { if (!active) { applyProfileState(await api.profiles.select(p.id)); render(); } },
-      onkeydown: async (e) => { if ((e.key === 'Enter' || e.key === ' ') && !active) { e.preventDefault(); applyProfileState(await api.profiles.select(p.id)); render(); } }
-    },
-      h('div', { class: 'ver-top' },
-        h('span', { class: 'ver-num' }, p.version),
-        h('span', { class: 'tag', 'data-ver': p.version, hidden: !S.installed.includes(p.version) }, 'İndirildi')),
-      h('div', { class: 'ver-name' }, p.name),
-      h('div', { class: 'chips' },
-        h('span', { class: 'chip' }, gb(p.maxRam) + ' GB'),
-        h('span', { class: 'chip' }, p.width + '×' + p.height),
-        active ? h('span', { class: 'tag accent' }, 'Seçili') : null),
-      h('div', { class: 'ver-actions' },
-        h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); openProfileModal(p); } }, 'Ayarla'),
-        h('button', { class: 'btn small danger', onclick: async (e) => {
-          e.stopPropagation();
-          const r = await api.profiles.remove(p.id);
-          if (applyProfileState(r)) render(); else toast(r.error, 'error');
-        } }, 'Sil')));
-  });
-
-  tiles.push(
-    h('div', { class: 'ver-tile add', tabindex: '0', role: 'button', onclick: openVersionPicker,
-      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openVersionPicker(); } } },
-      h('div', { class: 'plus' }, '+'), h('div', {}, 'Sürüm ekle'))
-  );
-
-  return h('section', {},
-    h('div', { class: 'page-head' },
-      h('div', {},
-        h('h1', { class: 'page-title' }, 'Sürümler'),
-        h('p', { class: 'page-sub' }, 'Oynamak istediğin Minecraft sürümlerini ekle. Her sürümün belleği ve pencere boyutu ayrı ayarlanır, seçtiğin sürüm ana sayfadan başlar.')),
-      h('button', { class: 'btn primary', onclick: openVersionPicker }, 'Sürüm ekle')),
-    h('div', { class: 'ver-grid' }, tiles)
-  );
-}
-
-async function openVersionPicker() {
-  if (!S.versions || !S.versions.length) await loadVersions();
-  let filter = 'release';
-  let query = '';
-  const FILTERS = [['release', 'Sürümler'], ['snapshot', 'Snapshot'], ['old', 'Eski sürümler']];
-  const matches = (v) => filter === 'release' ? v.type === 'release' : filter === 'snapshot' ? v.type === 'snapshot' : v.type.startsWith('old');
-
-  const search = h('input', { type: 'text', placeholder: 'Sürüm ara, örneğin 1.20', autocomplete: 'off', 'aria-label': 'Sürüm ara' });
-  const chips = h('div', { class: 'chips' });
-  const list = h('div', { class: 'vp-list' });
-
-  const draw = () => {
-    chips.textContent = '';
-    for (const [id, label] of FILTERS) {
-      chips.append(h('button', { class: 'chip' + (filter === id ? ' on' : ''), onclick: () => { filter = id; draw(); } }, label));
-    }
-    list.textContent = '';
-    const rows = (S.versions || []).filter((v) => matches(v) && v.id.toLowerCase().includes(query)).slice(0, 150);
-    if (!rows.length) list.append(h('div', { class: 'vp-empty' }, 'Bu aramayla eşleşen sürüm yok.'));
-    for (const v of rows) {
-      list.append(h('div', { class: 'vp-row' },
-        h('b', {}, v.id),
-        h('small', {}, v.releaseTime ? v.releaseTime.slice(0, 10) : ''),
-        S.installed.includes(v.id) ? h('span', { class: 'tag' }, 'İndirildi') : null,
-        h('button', { class: 'btn small primary', onclick: () => addVersion(v) }, 'Ekle')));
-    }
-  };
-  search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); draw(); });
-
-  const addVersion = async (v) => {
-    const r = await api.profiles.save({
-      name: 'Minecraft ' + v.id, version: v.id, type: v.type,
-      minRam: 1024, maxRam: S.settings.defaultMaxRam || 4096, jvmArgs: '', width: 854, height: 480
-    });
-    if (!applyProfileState(r)) return toast(r.error, 'error');
-    const added = S.profiles[S.profiles.length - 1];
-    applyProfileState(await api.profiles.select(added.id));
-    m.remove();
-    render();
-    toast(v.id + ' eklendi ve seçildi.', 'ok');
-  };
-
-  const m = modal('Sürüm ekle', h('div', {}, h('div', { class: 'vp-tools' }, search, chips), list), [
-    h('button', { class: 'btn', onclick: () => m.remove() }, 'Kapat')
-  ]);
-  draw();
-  setTimeout(() => search.focus(), 60);
-}
-
-async function openProfileModal(existing) {
-  if (!S.versions || !S.versions.length) await loadVersions();
-  const p = { ...existing };
-
-  const name = h('input', { type: 'text', value: p.name, maxlength: '32', 'aria-label': 'Ad' });
-  const sel = h('select', { 'aria-label': 'Sürüm' });
-  const showAll = h('input', { type: 'checkbox' });
-  const fill = () => {
-    sel.textContent = '';
-    const list = (S.versions || []).filter((v) => showAll.checked || v.type === 'release' || v.id === p.version);
-    if (!list.length) sel.append(h('option', { value: p.version }, p.version));
-    for (const v of list) sel.append(h('option', { value: v.id }, v.type === 'release' ? v.id : `${v.id} (${v.type.replace('old_', 'eski ')})`));
-    sel.value = p.version;
-  };
-  showAll.addEventListener('change', () => { p.version = sel.value; fill(); });
-  fill();
-
-  const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
-  const ramLabel = h('b', {}, gb(p.maxRam) + ' GB');
-  const slider = h('input', { type: 'range', min: '1024', max: String(cap), step: '256', value: String(Math.min(p.maxRam, cap)), 'aria-label': 'Bellek' });
-  slider.addEventListener('input', () => { ramLabel.textContent = gb(Number(slider.value)) + ' GB'; });
-  const presets = h('div', { class: 'chips' }, [2048, 4096, 6144, 8192].filter((v) => v <= cap).map((v) =>
-    h('button', { class: 'chip', onclick: () => { slider.value = String(v); slider.dispatchEvent(new Event('input')); } }, gb(v) + ' GB')));
-
-  const minRam = h('input', { type: 'number', value: p.minRam, min: '512', step: '256', 'aria-label': 'En az bellek' });
-  const jvm = h('input', { type: 'text', value: p.jvmArgs, placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'JVM argümanları' });
-  const width = h('input', { type: 'number', value: p.width, min: '320', 'aria-label': 'Genişlik' });
-  const height = h('input', { type: 'number', value: p.height, min: '240', 'aria-label': 'Yükseklik' });
-
-  const body = h('div', {},
-    h('div', { class: 'field' }, h('label', {}, 'Ad'), name),
-    h('div', { class: 'field' }, h('label', {}, 'Minecraft sürümü'), sel,
-      h('label', { class: 'row' }, showAll, h('small', {}, 'Snapshot ve eski sürümleri de göster'))),
-    h('div', { class: 'field ram-box' },
-      h('div', { class: 'ram-top' }, ramLabel, h('small', {}, 'Bu bilgisayarda ' + gb(S.sys.totalMemMB) + ' GB RAM var')),
-      slider, presets),
-    h('details', { class: 'adv' },
-      h('summary', {}, 'Gelişmiş ayarlar'),
-      h('div', { class: 'grid-2' },
-        h('div', { class: 'field' }, h('label', {}, 'Pencere genişliği'), width),
-        h('div', { class: 'field' }, h('label', {}, 'Pencere yüksekliği'), height)),
-      h('div', { class: 'field' }, h('label', {}, 'En az bellek (MB)'), minRam),
-      h('div', { class: 'field' }, h('label', {}, 'Bu sürüme özel JVM argümanları'), jvm))
-  );
-
-  const m = modal('Sürümü ayarla', body, [
-    h('button', { class: 'btn', onclick: () => m.remove() }, 'Vazgeç'),
-    h('button', { class: 'btn primary', onclick: async () => {
-      const v = (S.versions || []).find((x) => x.id === sel.value);
-      const r = await api.profiles.save({
-        ...p,
-        name: name.value,
-        version: sel.value,
-        type: v ? v.type : p.type,
-        minRam: Math.min(Number(minRam.value) || 1024, Number(slider.value)),
-        maxRam: Number(slider.value),
-        jvmArgs: jvm.value,
-        width: Number(width.value),
-        height: Number(height.value)
-      });
-      if (applyProfileState(r)) { m.remove(); render(); toast('Kaydedildi.', 'ok'); }
-      else toast(r.error, 'error');
-    } }, 'Kaydet')
-  ]);
-}
-
 /* ---------- Skinler ---------- */
 function renderSkins() {
   ensureMcProfile();
   let viewer = null;
+  let backView = false;
 
   if (!S.stage) S.stage = accountSkin() || (S.skins[0] && { id: S.skins[0].id, dataUrl: S.skins[0].dataUrl, slim: S.skins[0].variant === 'slim', label: S.skins[0].name }) || null;
 
@@ -648,7 +503,11 @@ function renderSkins() {
     if (viewer) viewer.setAnimated(S.settings.viewerAnimation !== false);
   } }, 'Animasyon');
 
+  const tBack = h('button', { class: 'tog', onclick: () => { backView = !backView; syncTools(); drawStage(); } }, 'Arka yüz');
+
   const syncTools = () => {
+    tBack.classList.toggle('on', backView && !use3D());
+    tBack.disabled = use3D();
     t3d.classList.toggle('on', use3D());
     t3d.disabled = !HAS3D;
     if (!HAS3D) t3d.title = 'Bu bilgisayarda WebGL kullanılamıyor';
@@ -684,7 +543,7 @@ function renderSkins() {
     } else {
       const c = h('canvas', { class: 's2d', width: '16', height: '32', 'aria-label': 'Skin önizlemesi' });
       stageView.append(c);
-      drawSkin2D(c, st.dataUrl, st.slim);
+      drawSkin2D(c, st.dataUrl, st.slim, backView);
     }
   };
 
@@ -801,7 +660,7 @@ function renderSkins() {
   };
 
   const stage = h('div', { class: 'skin-stage' },
-    h('div', { class: 'stage-tools' }, t3d, tAnim),
+    h('div', { class: 'stage-tools' }, t3d, tAnim, tBack),
     stageView, label,
     h('button', { class: 'btn small', onclick: showAccountSkin }, 'Hesabımdaki skini göster'),
     hint);
@@ -821,15 +680,6 @@ function renderSkins() {
         grid,
         h('div', { class: 'side-head' }, h('h2', {}, 'Pelerinler')),
         capeBox))
-  );
-}
-
-/* ---------- Market ---------- */
-function renderMarket() {
-  return h('section', {},
-    h('h1', { class: 'page-title' }, 'Market'),
-    h('p', { class: 'page-sub' }, 'Market hazırlanıyor. Skin paketleri, mod paketleri ve kozmetikler burada yer alacak.'),
-    h('div', { class: 'market-grid' }, ['Skin paketleri', 'Mod paketleri', 'Kozmetikler'].map((t) => h('div', { class: 'market-tile' }, t)))
   );
 }
 
@@ -859,12 +709,23 @@ function renderSettings() {
   ram.addEventListener('input', () => { ramVal.textContent = gb(Number(ram.value)) + ' GB'; });
   ram.addEventListener('change', () => setSetting({ defaultMaxRam: Number(ram.value) }));
 
-  const ACCENTS = [['emerald', 'Zümrüt'], ['lemon', 'Limon'], ['ocean', 'Okyanus'], ['violet', 'Menekşe']];
-  const swatches = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Vurgu rengi' },
-    ACCENTS.map(([id, label]) => h('button', {
-      class: 'swatch' + ((st.accent || 'emerald') === id ? ' on' : ''), 'data-c': id, title: label, 'aria-label': label,
-      onclick: async () => { await setSetting({ accent: id }); render(); }
+  const THEMES = [['lemon', 'Limon (siyah-sarı)'], ['emerald', 'Zümrüt'], ['ocean', 'Okyanus'], ['violet', 'Menekşe']];
+  const swatches = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Tema' },
+    THEMES.map(([id, label]) => h('button', {
+      class: 'swatch' + ((st.theme || 'lemon') === id ? ' on' : ''), 'data-c': id, title: label, 'aria-label': label,
+      onclick: async () => { await setSetting({ theme: id }); render(); }
     })));
+  const updateMsg = h('small', {}, '');
+  const checkBtn = h('button', { class: 'btn', onclick: async () => {
+    checkBtn.disabled = true; updateMsg.textContent = 'Denetleniyor…';
+    const r = await api.update.check();
+    checkBtn.disabled = false;
+    if (!r.ok) { updateMsg.textContent = r.error; return; }
+    if (r.available) { S.update = { info: r, percent: null }; renderBanner(); updateMsg.textContent = 'Yeni sürüm var: v' + fmtVer(r.version); }
+    else if (r.reason === 'not-found') updateMsg.textContent = 'Sürüm bilgisi alınamadı. GitHub deposu gizliyse güncelleme denetlenemez.';
+    else if (r.reason) updateMsg.textContent = 'Denetlenemedi, internet bağlantını kontrol et.';
+    else updateMsg.textContent = 'Launcher güncel (v' + fmtVer(r.current) + ').';
+  } }, 'Şimdi denetle');
 
   return h('section', { class: 'set-wrap' },
     h('h1', { class: 'page-title' }, 'Ayarlar'),
@@ -899,12 +760,17 @@ function renderSettings() {
     ),
 
     group('Görünüm', '',
-      row('Vurgu rengi', 'Düğmelerin ve seçili öğelerin rengi.', swatches),
+      row('Tema', 'Launcher’ın renkleri. Varsayılan siyah ve sarı.', swatches),
       row('Arayüz animasyonları', 'Kapatırsan geçiş efektleri durur.', sw('animations')),
       row('Skinleri 3D göster', 'Skin sayfasında ve kartlarda 3D önizleme kullanılır.', sw('viewer3d')),
       row('3D karakter animasyonu', 'Karakter yürür ve yavaşça döner.', sw('viewerAnimation')),
       row('Oyun günlüğünü göster', 'Ana sayfada oyunun çıktısını gösterir.', h('label', { class: 'switch' },
         h('input', { type: 'checkbox', checked: !!st.showLog, onchange: (e) => setSetting({ showLog: e.target.checked }) }), h('span')))
+    ),
+
+    group('Güncelleme', '',
+      row('Otomatik güncelle', 'Yeni sürüm çıkınca launcher açılışta kendini günceller.', sw('autoUpdate')),
+      h('div', { class: 'set-row' }, h('div', { class: 'set-text' }, h('b', {}, 'Güncellemeleri denetle'), updateMsg), h('div', { class: 'set-ctl' }, checkBtn))
     ),
 
     group('Bakım', '',
@@ -914,9 +780,60 @@ function renderSettings() {
         const r = await api.settings.reset();
         if (r.ok) { S.settings = r.settings; applySettings(); render(); toast('Ayarlar sıfırlandı.', 'ok'); }
       } }, 'Sıfırla')),
-      h('div', { class: 'about' }, `Limon Launcher ${S.sys.version}`, h('br'), `Bu bilgisayarda ${gb(S.sys.totalMemMB)} GB RAM var.`, h('br'), HAS3D ? '3D önizleme kullanılabilir.' : '3D önizleme bu bilgisayarda kullanılamıyor.')
+      h('div', { class: 'about' }, `Limon Launcher v${fmtVer(S.sys.version)}`, h('br'), `Bu bilgisayarda ${gb(S.sys.totalMemMB)} GB RAM var.`, h('br'), HAS3D ? '3D önizleme kullanılabilir.' : '3D önizleme bu bilgisayarda kullanılamıyor.')
     )
   );
+}
+
+/* ---------- Güncelleme çubuğu & indirme kartı ---------- */
+function renderBanner() {
+  const b = $('#banner');
+  const u = S.update;
+  b.textContent = '';
+  if (!u || u.dismissed) { b.hidden = true; return; }
+  b.hidden = false;
+  if (u.error) {
+    b.append(h('span', {}, 'Güncelleme başarısız: ' + u.error), h('button', { class: 'btn ghost', onclick: () => { u.dismissed = true; renderBanner(); } }, 'Kapat'));
+  } else if (u.percent != null) {
+    b.append(h('span', {}, 'v' + fmtVer(u.info.version) + ' indiriliyor… %' + u.percent), h('div', { class: 'bar' }, h('i', { style: 'width:' + u.percent + '%' })));
+  } else {
+    b.append(
+      h('span', {}, 'Yeni sürüm hazır: v' + fmtVer(u.info.version)),
+      h('button', { class: 'btn', onclick: async () => {
+        u.percent = 0; renderBanner();
+        const r = await api.update.install();
+        if (!r.ok) { u.error = r.error; u.percent = null; renderBanner(); }
+      } }, 'Güncelle'),
+      h('button', { class: 'btn ghost', onclick: () => { u.dismissed = true; renderBanner(); } }, 'Sonra'));
+  }
+}
+
+function bindUpdateEvents() {
+  api.update.onAvailable((info) => { S.update = { info, percent: null }; renderBanner(); });
+  api.update.onProgress(({ percent, version }) => {
+    if (!S.update) S.update = { info: { version }, percent };
+    S.update.percent = percent;
+    renderBanner();
+  });
+  api.update.onError(({ message }) => { if (S.update) { S.update.error = message; S.update.percent = null; renderBanner(); } });
+}
+
+let dlTimer = null;
+function bindContentProgress() {
+  api.content.onProgress((d) => {
+    const card = $('#dl');
+    if (d.done) {
+      clearTimeout(dlTimer);
+      dlTimer = setTimeout(() => { card.hidden = true; }, 600);
+      return;
+    }
+    clearTimeout(dlTimer);
+    card.hidden = false;
+    $('#dl-text').textContent = d.task || 'İndiriliyor';
+    const bar = $('#dl-bar');
+    bar.classList.toggle('indeterminate', d.percent == null);
+    $('#dl-fill').style.width = d.percent == null ? '' : d.percent + '%';
+  });
 }
 
 /* ---------- Başlangıç ---------- */
@@ -936,9 +853,11 @@ async function boot() {
   applySettings();
 
   bindGameEvents();
+  bindUpdateEvents();
+  bindContentProgress();
   render();
   loadVersions();
   loadInstalled();
 }
 
-boot();
+window.addEventListener('DOMContentLoaded', boot);

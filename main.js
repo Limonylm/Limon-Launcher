@@ -7,6 +7,10 @@ const crypto = require('crypto');
 const { Client } = require('minecraft-launcher-core');
 const { Auth } = require('msmc');
 const extract = require('extract-zip');
+const util = require('./lib/util');
+const loaders = require('./lib/loaders');
+const modrinth = require('./lib/modrinth');
+const updater = require('./lib/updater');
 
 let win = null;
 let store = null;
@@ -36,7 +40,11 @@ function defaultStore() {
         maxRam: 4096,
         jvmArgs: '',
         width: 854,
-        height: 480
+        height: 480,
+        loader: 'vanilla',
+        loaderVersion: '',
+        dirMode: 'shared',
+        instanceId: ''
       }
     ],
     activeProfile: 'default',
@@ -55,7 +63,8 @@ function defaultSettings() {
     fullscreen: false,
     minimizeOnLaunch: true,
     showLog: true,
-    accent: 'emerald',
+    theme: 'lemon',
+    autoUpdate: true,
     animations: true,
     viewer3d: true,
     viewerAnimation: true
@@ -83,6 +92,12 @@ const enc = (s) =>
     : 'raw:' + s;
 const dec = (s) =>
   s.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(s.slice(4), 'base64')) : s.slice(4);
+
+/** Profilin oyun dosyalarının (mods, saves...) durduğu klasör. */
+function instanceDir(profile) {
+  if (profile.dirMode === 'own') return path.join(store.settings.gameDir, 'instances', profile.instanceId || profile.id);
+  return store.settings.gameDir;
+}
 
 const publicAccounts = () =>
   store.accounts.map(({ id, type, name, uuid }) => ({ id, type, name, uuid }));
@@ -220,25 +235,7 @@ function javaBinIn(dir) {
   return null;
 }
 
-async function download(url, file, onProgress) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('İndirme hatası (' + res.status + ')');
-  const total = Number(res.headers.get('content-length')) || 0;
-  let got = 0;
-  const out = fs.createWriteStream(file);
-  const reader = res.body.getReader();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      got += value.length;
-      if (!out.write(value)) await new Promise((r) => out.once('drain', r));
-      if (total) onProgress(Math.round((got / total) * 100));
-    }
-  } finally {
-    await new Promise((r) => out.end(r));
-  }
-}
+const download = util.download;
 
 async function ensureJava(major) {
   if (store.settings.javaPath) return store.settings.javaPath;
@@ -378,8 +375,15 @@ handle('profiles:save', async (p) => {
     maxRam,
     jvmArgs: String(p.jvmArgs || '').trim(),
     width: Math.max(320, Number(p.width) || 854),
-    height: Math.max(240, Number(p.height) || 480)
+    height: Math.max(240, Number(p.height) || 480),
+    loader: ['fabric', 'quilt'].includes(p.loader) ? p.loader : 'vanilla',
+    loaderVersion: String(p.loaderVersion || ''),
+    dirMode: p.dirMode === 'own' ? 'own' : 'shared',
+    instanceId: String(p.instanceId || '')
   };
+  if (clean.dirMode === 'own' && !clean.instanceId) {
+    clean.instanceId = util.slugify(name) + '-' + crypto.randomBytes(3).toString('hex');
+  }
   const i = store.profiles.findIndex((x) => x.id === clean.id);
   if (i >= 0) store.profiles[i] = clean;
   else store.profiles.push(clean);
@@ -476,6 +480,17 @@ handle('game:launch', async (profileId) => {
   const javaPath = await ensureJava(major);
 
   fs.mkdirSync(store.settings.gameDir, { recursive: true });
+  const gameDir = store.settings.gameDir;
+  const idir = instanceDir(profile);
+  fs.mkdirSync(idir, { recursive: true });
+
+  let customId = null;
+  if (profile.loader && profile.loader !== 'vanilla') {
+    send('game:progress', { task: (profile.loader === 'quilt' ? 'Quilt' : 'Fabric') + ' hazırlanıyor', percent: null });
+    customId = await loaders.ensureLoader(gameDir, profile, (p) =>
+      send('game:progress', { task: 'Minecraft indiriliyor', percent: p })
+    );
+  }
 
   const launcher = new Client();
   launcher.on('debug', (m) => send('game:log', String(m)));
@@ -497,9 +512,10 @@ handle('game:launch', async (profileId) => {
 
   const proc = await launcher.launch({
     authorization,
-    root: store.settings.gameDir,
+    root: gameDir,
     javaPath,
-    version: { number: profile.version, type: profile.type || 'release' },
+    version: { number: profile.version, type: profile.type || 'release', ...(customId ? { custom: customId } : {}) },
+    ...(idir !== gameDir ? { overrides: { gameDirectory: idir, cwd: idir } } : {}),
     memory: { min: profile.minRam + 'M', max: profile.maxRam + 'M' },
     customArgs: [
       ...(store.settings.globalJvmArgs || '').split(/\s+/).filter(Boolean),
@@ -523,6 +539,157 @@ handle('game:stop', async () => {
   if (running) running.kill();
   return { ok: true };
 });
+
+
+/* ------------------------------------------------------------------ */
+/* Kurulum yönetimi                                                    */
+/* ------------------------------------------------------------------ */
+const CONTENT_DIRS = modrinth.TYPE_DIR;
+const findProfile = (id) => {
+  const p = store.profiles.find((x) => x.id === id);
+  if (!p) throw new Error('Sürüm bulunamadı.');
+  return p;
+};
+
+handle('profiles:open-dir', async (id) => {
+  const dir = instanceDir(findProfile(id));
+  fs.mkdirSync(dir, { recursive: true });
+  await shell.openPath(dir);
+  return { ok: true };
+});
+
+// Temiz kurulum: sürümün oyun dosyalarını siler, bir sonraki başlatmada yeniden indirilir.
+handle('profiles:clean-install', async ({ id, wipeData }) => {
+  if (running) return { ok: false, error: 'Önce oyunu kapat.' };
+  const p = findProfile(id);
+  const vdir = path.join(store.settings.gameDir, 'versions');
+  fs.rmSync(path.join(vdir, p.version), { recursive: true, force: true });
+  if (fs.existsSync(vdir)) {
+    for (const e of fs.readdirSync(vdir, { withFileTypes: true })) {
+      if (e.isDirectory() && /^(fabric|quilt)-loader-/.test(e.name) && e.name.endsWith('-' + p.version)) {
+        fs.rmSync(path.join(vdir, e.name), { recursive: true, force: true });
+      }
+    }
+  }
+  // Ortak klasör asla silinmez; yalnızca sürüme özel klasör sıfırlanabilir.
+  if (wipeData && p.dirMode === 'own') {
+    const dir = instanceDir(p);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return { ok: true };
+});
+
+handle('content:list', async ({ profileId, type }) => {
+  const sub = CONTENT_DIRS[type];
+  if (!sub) throw new Error('Geçersiz içerik türü.');
+  const dir = path.join(instanceDir(findProfile(profileId)), sub);
+  if (!fs.existsSync(dir)) return { ok: true, files: [] };
+  const files = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => (e.isFile() || (type !== 'mod' && e.isDirectory())) && !e.name.endsWith('.part'))
+    .map((e) => ({
+      name: e.name,
+      enabled: !e.name.endsWith('.disabled'),
+      size: e.isFile() ? fs.statSync(path.join(dir, e.name)).size : 0
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { ok: true, files };
+});
+
+handle('content:remove', async ({ profileId, type, name }) => {
+  const dir = path.join(instanceDir(findProfile(profileId)), CONTENT_DIRS[type]);
+  fs.rmSync(util.safeJoin(dir, name), { recursive: true, force: true });
+  return { ok: true };
+});
+
+handle('content:toggle', async ({ profileId, type, name }) => {
+  const dir = path.join(instanceDir(findProfile(profileId)), CONTENT_DIRS[type]);
+  const from = util.safeJoin(dir, name);
+  const to = name.endsWith('.disabled') ? from.slice(0, -'.disabled'.length) : from + '.disabled';
+  fs.renameSync(from, to);
+  return { ok: true };
+});
+
+/* ------------------------------------------------------------------ */
+/* Modrinth                                                            */
+/* ------------------------------------------------------------------ */
+const contentProgress = (d) => send('content:progress', d);
+
+handle('modrinth:search', async (opts) => ({ ok: true, ...(await modrinth.search(opts || {})) }));
+
+handle('modrinth:install', async ({ profileId, projectId, type }) => {
+  const p = findProfile(profileId);
+  const idir = instanceDir(p);
+  fs.mkdirSync(idir, { recursive: true });
+  try {
+    const installed = await modrinth.installProject({
+      projectId, type, mcVersion: p.version, loader: p.loader, instanceDir: idir, onProgress: contentProgress
+    });
+    return { ok: true, installed };
+  } finally {
+    contentProgress({ done: true });
+  }
+});
+
+handle('modrinth:install-modpack', async ({ projectId }) => {
+  try {
+    const info = await modrinth.installModpack({
+      projectId, instancesDir: path.join(store.settings.gameDir, 'instances'), onProgress: contentProgress
+    });
+    const profile = {
+      id: crypto.randomUUID(), name: info.name, version: info.mcVersion, type: 'release',
+      minRam: 1024, maxRam: Math.max(store.settings.defaultMaxRam || 4096, 4096), jvmArgs: '',
+      width: 854, height: 480, loader: info.loader, loaderVersion: info.loaderVersion,
+      dirMode: 'own', instanceId: info.folder
+    };
+    store.profiles.push(profile);
+    store.activeProfile = profile.id;
+    saveStore();
+    return profileState();
+  } finally {
+    contentProgress({ done: true });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* Güncelleme                                                          */
+/* ------------------------------------------------------------------ */
+let updateInfo = null;
+
+async function runUpdateInstall() {
+  if (!updateInfo) return { ok: false, error: 'Güncelleme bulunamadı.' };
+  store.updateAttempt = { version: updateInfo.version, time: Date.now() };
+  saveStore();
+  try {
+    await updater.install(app, updateInfo, (p) => send('update:progress', { percent: p, version: updateInfo.version }));
+    return { ok: true };
+  } catch (err) {
+    send('update:error', { message: err.message });
+    throw err;
+  }
+}
+
+handle('update:check', async () => {
+  const r = await updater.check(app.getVersion());
+  updateInfo = r.available ? r : null;
+  return { ok: true, current: app.getVersion(), ...r };
+});
+handle('update:install', runUpdateInstall);
+
+async function autoUpdateCheck() {
+  if (!app.isPackaged) return;
+  try {
+    const r = await updater.check(app.getVersion());
+    if (!r.available) return;
+    updateInfo = r;
+    send('update:available', r);
+    const tried = store.updateAttempt && store.updateAttempt.version === r.version;
+    if (store.settings.autoUpdate && !running && !tried) await runUpdateInstall();
+  } catch {
+    /* sessizce geç */
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Skinler                                                             */
@@ -725,6 +892,7 @@ if (!gotLock) {
       cb({ requestHeaders: details.requestHeaders });
     });
     createWindow();
+    win.webContents.once('did-finish-load', () => setTimeout(autoUpdateCheck, 3500));
   });
 
   app.on('window-all-closed', () => app.quit());

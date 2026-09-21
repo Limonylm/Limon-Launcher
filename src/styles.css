@@ -1,26 +1,45 @@
 /* Limon Launcher
    Zemin: derin zümrüt yeşili tonları. Vurgu rengi ayarlardan değişir (varsayılan zümrüt). */
 :root {
-  --bg-0: #06140e;
-  --bg-1: #0a1f16;
-  --surface-1: #0f2a1e;
-  --surface-2: #143626;
-  --surface-3: #1b4530;
-  --line: #235339;
-  --text: #ebf9f0;
-  --muted: #8db8a0;
+  /* Varsayılan tema: Limon (siyah + sarı) */
+  --bg-0: #050505;
+  --bg-1: #0b0b0c;
+  --surface-1: #141415;
+  --surface-2: #1b1b1d;
+  --surface-3: #27272a;
+  --line: #34343a;
+  --line-soft: rgba(255, 255, 255, .06);
+  --text: #f7f4e8;
+  --muted: #a5a291;
   --lemon: #ffd93b;
   --danger: #ff8a66;
-  --accent: #34d67f;
-  --accent-hi: #5be99b;
-  --accent-ink: #03230f;
-  --accent-soft: rgba(52, 214, 127, .14);
+  --accent: #ffd93b;
+  --accent-hi: #ffe470;
+  --accent-ink: #1d1600;
+  --accent-soft: rgba(255, 217, 59, .13);
+  --glow: rgba(255, 217, 59, .11);
+  --glow-2: rgba(255, 217, 59, .04);
   --display: "Bahnschrift", "Segoe UI Variable Display", "Arial Narrow", "Segoe UI", sans-serif;
   --body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
-[data-accent="lemon"]  { --accent: #ffd93b; --accent-hi: #ffe470; --accent-ink: #251d00; --accent-soft: rgba(255, 217, 59, .14); }
-[data-accent="ocean"]  { --accent: #3cc8ee; --accent-hi: #6ddcf7; --accent-ink: #032530; --accent-soft: rgba(60, 200, 238, .14); }
-[data-accent="violet"] { --accent: #a98cff; --accent-hi: #c3b0ff; --accent-ink: #180b3f; --accent-soft: rgba(169, 140, 255, .16); }
+[data-theme="emerald"] {
+  --bg-0: #06140e; --bg-1: #0a1f16; --surface-1: #0f2a1e; --surface-2: #143626; --surface-3: #1b4530; --line: #235339;
+  --line-soft: rgba(52, 214, 127, .08); --text: #ebf9f0; --muted: #8db8a0;
+  --accent: #34d67f; --accent-hi: #5be99b; --accent-ink: #03230f; --accent-soft: rgba(52, 214, 127, .14);
+  --glow: rgba(52, 214, 127, .13); --glow-2: rgba(255, 217, 59, .05);
+}
+[data-theme="ocean"] {
+  --bg-0: #050b14; --bg-1: #091423; --surface-1: #0f1e33; --surface-2: #152841; --surface-3: #1d3557; --line: #27466f;
+  --line-soft: rgba(60, 200, 238, .08); --text: #e8f3ff; --muted: #8fb0d3;
+  --accent: #3cc8ee; --accent-hi: #6ddcf7; --accent-ink: #032530; --accent-soft: rgba(60, 200, 238, .14);
+  --glow: rgba(60, 200, 238, .12); --glow-2: rgba(60, 200, 238, .04);
+}
+[data-theme="violet"] {
+  --bg-0: #0a0712; --bg-1: #100b1c; --surface-1: #181129; --surface-2: #20173a; --surface-3: #2c2150; --line: #3a2d68;
+  --line-soft: rgba(169, 140, 255, .08); --text: #f0eaff; --muted: #a99bd0;
+  --accent: #a98cff; --accent-hi: #c3b0ff; --accent-ink: #180b3f; --accent-soft: rgba(169, 140, 255, .16);
+  --glow: rgba(169, 140, 255, .14); --glow-2: rgba(169, 140, 255, .05);
+}
 
 [hidden] { display: none !important; }
 * { box-sizing: border-box; margin: 0; }
@@ -33,7 +52,7 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.app { display: grid; grid-template-rows: 38px 1fr; height: 100vh; }
+.app { display: grid; grid-template-rows: 38px auto 1fr; height: 100vh; }
 
 /* ---------- Başlık çubuğu ---------- */
 .titlebar {
@@ -51,9 +70,9 @@ button { cursor: pointer; }
 /* ---------- Yerleşim ---------- */
 .shell { display: grid; grid-template-columns: 224px 1fr; min-height: 0; }
 .sidebar {
-  background: linear-gradient(180deg, var(--bg-0), #08180f);
+  background: var(--bg-0);
   padding: 18px 12px 14px; display: flex; flex-direction: column; gap: 4px;
-  border-right: 1px solid rgba(52, 214, 127, .08);
+  border-right: 1px solid var(--line-soft);
 }
 .nav-item {
   position: relative; display: flex; align-items: center; gap: 12px;
@@ -85,8 +104,8 @@ button { cursor: pointer; }
 .main {
   overflow-y: auto; padding: 30px 38px 40px;
   background:
-    radial-gradient(900px 420px at 88% -8%, rgba(52, 214, 127, .13), transparent 62%),
-    radial-gradient(700px 380px at 0% 108%, rgba(255, 217, 59, .05), transparent 60%),
+    radial-gradient(900px 420px at 88% -8%, var(--glow), transparent 62%),
+    radial-gradient(700px 380px at 0% 108%, var(--glow-2), transparent 60%),
     var(--bg-1);
 }
 .main::-webkit-scrollbar, .log::-webkit-scrollbar, .vp-list::-webkit-scrollbar, .modal::-webkit-scrollbar { width: 10px; }
@@ -151,7 +170,7 @@ button.chip.on { background: var(--accent-soft); color: var(--accent); border-co
   display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: center;
   padding: 30px 32px; border-radius: 22px; min-height: 340px;
   background:
-    radial-gradient(520px 260px at 100% 0%, rgba(52, 214, 127, .18), transparent 70%),
+    radial-gradient(520px 260px at 100% 0%, var(--glow), transparent 70%),
     linear-gradient(135deg, var(--surface-2), var(--surface-1));
   border: 1px solid var(--line);
 }
@@ -196,7 +215,7 @@ button.chip.on { background: var(--accent-soft); color: var(--accent); border-co
 
 .log {
   margin-top: 20px; height: 170px; overflow-y: auto; padding: 12px 14px; border-radius: 14px;
-  background: var(--bg-0); border: 1px solid var(--surface-2); color: #bfe0cd;
+  background: var(--bg-0); border: 1px solid var(--surface-2); color: var(--muted);
   font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-all; user-select: text;
 }
 .log:empty::before { content: "Oyun günlüğü burada görünecek."; color: var(--muted); }
@@ -248,8 +267,10 @@ details.adv summary:hover { color: var(--text); }
 .swatches { display: flex; gap: 10px; }
 .swatch { width: 34px; height: 34px; border-radius: 50%; border: 3px solid transparent; outline: 1px solid var(--line); }
 .swatch.on { border-color: var(--bg-0); outline: 2px solid var(--text); }
-.swatch[data-c="emerald"] { background: #34d67f; } .swatch[data-c="lemon"] { background: #ffd93b; }
-.swatch[data-c="ocean"] { background: #3cc8ee; } .swatch[data-c="violet"] { background: #a98cff; }
+.swatch[data-c="lemon"] { background: linear-gradient(135deg, #0b0b0c 50%, #ffd93b 50%); }
+.swatch[data-c="emerald"] { background: linear-gradient(135deg, #0f2a1e 50%, #34d67f 50%); }
+.swatch[data-c="ocean"] { background: linear-gradient(135deg, #0f1e33 50%, #3cc8ee 50%); }
+.swatch[data-c="violet"] { background: linear-gradient(135deg, #181129 50%, #a98cff 50%); }
 .about { color: var(--muted); line-height: 1.7; padding: 14px 0 16px; border-top: 1px solid var(--surface-3); }
 
 /* ---------- Skinler ---------- */
@@ -337,3 +358,56 @@ details.adv summary:hover { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Güncelleme çubuğu & indirme kartı ---------- */
+.banner { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.banner .btn { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--accent); padding: 4px 12px; font-size: 13px; }
+.banner .btn:hover { filter: brightness(1.25); }
+.banner .btn.ghost { background: transparent; color: var(--accent-ink); border-color: rgba(0, 0, 0, .35); }
+.banner .bar { width: 160px; background: rgba(0, 0, 0, .25); }
+.banner .bar i { background: var(--accent-ink); }
+.dl-card { position: fixed; left: 244px; bottom: 20px; width: 320px; padding: 12px 14px; border-radius: 14px; background: var(--surface-3); border: 1px solid var(--line); box-shadow: 0 8px 28px rgba(0, 0, 0, .5); z-index: 15; }
+.dl-card .dl-text { margin-bottom: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Sürüm kartları (yükleyici / klasör) ---------- */
+.ver-actions { flex-wrap: wrap; }
+.ver-tile .chips { row-gap: 6px; }
+.chip.loader { background: var(--accent-soft); color: var(--accent); }
+.wiz-note { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 6px; }
+.wiz-path { font: 12px "Cascadia Mono", Consolas, monospace; color: var(--muted); word-break: break-all; margin-top: 6px; user-select: text; }
+button.chip[disabled] { opacity: .4; cursor: default; }
+.seg.wide { grid-template-columns: 1fr 1fr; }
+.seg.wide button { padding: 8px 6px; font-size: 13px; }
+.mp-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--surface-2); }
+.mp-row:last-child { border-bottom: 0; }
+.mp-row img, .mk-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--surface-3); object-fit: cover; flex: none; }
+.mp-row .info { flex: 1; min-width: 0; }
+.mp-row .info b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-row .info small { color: var(--muted); }
+.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.check input { margin-top: 2px; accent-color: var(--accent); }
+
+/* ---------- Market (Modrinth) ---------- */
+.mk-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.mk-head .grow { flex: 1; min-width: 220px; }
+.mk-head select { width: auto; min-width: 150px; }
+.mk-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+.mk-tab { border: 0; background: transparent; color: var(--muted); padding: 10px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.mk-tab:hover { color: var(--text); }
+.mk-tab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.mk-target { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.mk-list { display: grid; gap: 10px; }
+.mk-card { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: linear-gradient(160deg, var(--surface-2), var(--surface-1)); }
+.mk-card .info { flex: 1; min-width: 0; }
+.mk-card .info b { font-weight: 600; font-size: 15px; }
+.mk-card .info small { color: var(--muted); margin-left: 6px; }
+.mk-card .info p { color: var(--muted); font-size: 13px; line-height: 1.4; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mk-card .stat { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.mk-card .btn { flex: none; min-width: 84px; }
+.mk-note { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 12px 16px; margin-bottom: 14px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent); font-size: 13px; line-height: 1.4; }
+.mk-more { text-align: center; margin: 16px 0 4px; }
+.file-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-1); border: 1px solid var(--line); }
+.file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.file-row.off .name { color: var(--muted); text-decoration: line-through; }
+.file-row small { color: var(--muted); }
+.stage-tools { flex-wrap: wrap; }

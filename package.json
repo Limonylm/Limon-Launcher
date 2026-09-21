@@ -1,6 +1,6 @@
 {
   "name": "limon-launcher",
-  "version": "1.1.0",
+  "version": "0.3.0",
   "description": "Limon Launcher - Minecraft başlatıcısı",
   "main": "main.js",
   "author": "Limon",
@@ -24,6 +24,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "lib/**/*",
       "src/**/*",
       "package.json"
     ],
@@ -41,6 +42,15 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "language": "1055",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Limon Launcher",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
       "artifactName": "Limon-Launcher-Kurulum-${version}.${ext}"
     },
     "portable": {
