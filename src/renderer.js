@@ -3,6 +3,7 @@
 
 const api = window.limon;
 const $ = (sel, root = document) => root.querySelector(sel);
+const HAS3D = !!(window.Skin3D && window.Skin3D.supported());
 
 /* ---------- Küçük yardımcılar ---------- */
 function h(tag, props, ...kids) {
@@ -45,10 +46,12 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+const gb = (mb) => (mb / 1024).toFixed(mb % 1024 ? 1 : 0);
+
 /* ---------- İkonlar ---------- */
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
-  profiles: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+  versions: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
   skins: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
   market: '<path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 016 0v2"/>',
   settings: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'
@@ -57,28 +60,6 @@ const icon = (name) => h('span', { html: `<svg viewBox="0 0 24 24" aria-hidden="
 
 const LOGO =
   '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 29c0-9 8-17 19-17 3 0 6 1 8 2l4-3 1 5c1 2 1 4 1 6 0 9-8 16-19 16-8 0-14-4-14-9z" fill="#ffd93b"/><path d="M33 12c2-5 8-7 12-5-1 5-6 8-12 5z" fill="#7cc35a"/></svg>';
-
-function sliceSvg() {
-  const pt = (r, a) => [100 + r * Math.cos((a * Math.PI) / 180), 100 + r * Math.sin((a * Math.PI) / 180)];
-  let wedges = '';
-  for (let i = 0; i < 8; i++) {
-    const a0 = i * 45 + 3 - 90;
-    const a1 = (i + 1) * 45 - 3 - 90;
-    const [x0, y0] = pt(80, a0);
-    const [x1, y1] = pt(80, a1);
-    const [x2, y2] = pt(36, a1);
-    const [x3, y3] = pt(36, a0);
-    wedges += `<path class="slice" d="M${x0} ${y0}A80 80 0 0 1 ${x1} ${y1}L${x2} ${y2}A36 36 0 0 0 ${x3} ${y3}Z"/>`;
-  }
-  return `<svg viewBox="0 0 200 200" aria-hidden="true">
-    <circle cx="100" cy="100" r="98" fill="#e9b800"/>
-    <circle cx="100" cy="100" r="89" fill="#fff7d1"/>
-    ${wedges}
-    <circle cx="100" cy="100" r="33" fill="#0a1f19"/>
-    <path class="icon-play" d="M90 82v36l30-18z" fill="#ffd93b"/>
-    <rect class="icon-stop" x="88" y="88" width="24" height="24" rx="4" fill="#ffd93b"/>
-  </svg>`;
-}
 
 /* ---------- Durum ---------- */
 const S = {
@@ -90,18 +71,42 @@ const S = {
   settings: {},
   skins: [],
   versions: null,
-  stage: null, // skin sayfasındaki önizleme {dataUrl, slim, label}
+  installed: [],
+  sys: { totalMemMB: 8192, version: '', platform: '' },
+  stage: null, // skin sayfası önizlemesi {id, dataUrl, slim, label}
+  previewCape: undefined, // undefined: aktif pelerin, null: pelerin yok, string: pelerin id
+  mc: { for: null, skin: null, capes: [], loading: false, loaded: false, error: null },
+  snap: new Map(),
   game: { state: 'idle', task: '', percent: null, log: [] }
 };
 
 const activeAccount = () => S.accounts.find((a) => a.id === S.activeAccount) || null;
 const activeProfile = () => S.profiles.find((p) => p.id === S.activeProfile) || S.profiles[0] || null;
+const use3D = () => HAS3D && S.settings.viewer3d !== false;
+
+function applySettings() {
+  const root = document.documentElement;
+  root.dataset.accent = S.settings.accent || 'emerald';
+  root.dataset.motion = S.settings.animations === false ? 'off' : 'on';
+}
+async function setSetting(patch) {
+  const r = await api.settings.set(patch);
+  if (r.ok) {
+    S.settings = r.settings;
+    applySettings();
+  }
+  return r;
+}
 
 async function loadVersions() {
   const r = await api.versions();
   S.versions = r.ok ? r.versions : [];
   if (!r.ok) toast('Sürüm listesi alınamadı: ' + r.error, 'error');
   return S.versions;
+}
+async function loadInstalled() {
+  const r = await api.installedVersions();
+  if (r.ok) S.installed = r.ids;
 }
 
 function applyAccountState(r) {
@@ -117,6 +122,34 @@ function applyProfileState(r) {
   return true;
 }
 
+/* ---------- Microsoft hesabının skini ve pelerinleri ---------- */
+async function ensureMcProfile(force) {
+  const acc = activeAccount();
+  if (!acc || acc.type !== 'microsoft') {
+    S.mc = { for: null, skin: null, capes: [], loading: false, loaded: false, error: null };
+    return;
+  }
+  if (!force && S.mc.for === acc.id && (S.mc.loading || S.mc.loaded)) return;
+  S.mc = { for: acc.id, skin: null, capes: [], loading: true, loaded: false, error: null };
+  const r = await api.skins.current();
+  if (S.mc.for !== acc.id) return;
+  S.mc.loading = false;
+  if (r.ok) {
+    S.mc.skin = r.skin;
+    S.mc.capes = r.capes || [];
+    S.mc.loaded = true;
+  } else {
+    S.mc.error = r.error;
+  }
+  if (S.page === 'home' || S.page === 'skins') render();
+}
+
+const accountSkin = () => (S.mc.skin ? { dataUrl: S.mc.skin.dataUrl, slim: S.mc.skin.variant === 'slim', label: 'Hesabındaki skin', id: null } : null);
+const activeCapeUrl = () => {
+  const c = (S.mc.capes || []).find((x) => x.active);
+  return c ? c.dataUrl : null;
+};
+
 /* ---------- Avatar ---------- */
 function avatar(acc) {
   const el = h('div', { class: 'avatar' }, acc ? acc.name.charAt(0).toUpperCase() : '?');
@@ -130,10 +163,81 @@ function avatar(acc) {
   return el;
 }
 
-/* ---------- Kabuk: başlık çubuğu + yan menü ---------- */
+/* ---------- 2D skin çizimi ---------- */
+function drawSkin2D(canvas, dataUrl, slim) {
+  const img = new Image();
+  img.onload = () => {
+    const c = canvas.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    c.clearRect(0, 0, 16, 32);
+    const legacy = img.height * 2 === img.width;
+    const aw = slim ? 3 : 4;
+    const blit = (sx, sy, sw, sh, dx, dy, mirror) => {
+      if (mirror) {
+        c.save();
+        c.translate(dx + sw, dy);
+        c.scale(-1, 1);
+        c.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        c.restore();
+      } else {
+        c.drawImage(img, sx, sy, sw, sh, dx, dy, sw, sh);
+      }
+    };
+    blit(8, 8, 8, 8, 4, 0);
+    blit(20, 20, 8, 12, 4, 8);
+    blit(44, 20, aw, 12, slim ? 1 : 0, 8);
+    if (legacy) blit(44, 20, aw, 12, 12, 8, true); else blit(36, 52, aw, 12, 12, 8);
+    blit(4, 20, 4, 12, 4, 20);
+    if (legacy) blit(4, 20, 4, 12, 8, 20, true); else blit(20, 52, 4, 12, 8, 20);
+    blit(40, 8, 8, 8, 4, 0);
+    if (!legacy) {
+      blit(20, 36, 8, 12, 4, 8);
+      blit(44, 36, aw, 12, slim ? 1 : 0, 8);
+      blit(52, 52, aw, 12, 12, 8);
+      blit(4, 36, 4, 12, 4, 20);
+      blit(4, 52, 4, 12, 8, 20);
+    }
+  };
+  img.src = dataUrl;
+}
+
+/** Pelerinin dışarıdan görünen yüzünü küçük bir tuvale çizer. */
+function drawCapeThumb(canvas, dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const s = img.width % 64 === 0 ? img.width / 64 : 1;
+    const c = canvas.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    c.drawImage(img, 1 * s, 1 * s, 10 * s, 16 * s, 0, 0, 10, 16);
+  };
+  img.src = dataUrl;
+}
+
+/* ---------- 3D anlık görüntü (kart önizlemeleri için tek WebGL bağlamı) ---------- */
+let snapViewer = null;
+let snapQueue = Promise.resolve();
+function snapshot3D(dataUrl, slim) {
+  const key = (slim ? '1|' : '0|') + dataUrl;
+  if (S.snap.has(key)) return Promise.resolve(S.snap.get(key));
+  const job = snapQueue.then(async () => {
+    if (!snapViewer) {
+      const c = document.createElement('canvas');
+      c.width = 240; c.height = 300;
+      snapViewer = new window.Skin3D(c, { detached: true, autoStart: false, preserve: true, dpr: 1, animated: false, yaw: 0.5 });
+    }
+    await snapViewer.setSkin(dataUrl, slim);
+    const url = snapViewer.snapshot();
+    S.snap.set(key, url);
+    return url;
+  });
+  snapQueue = job.catch(() => {});
+  return job;
+}
+
+/* ---------- Kabuk ---------- */
 const NAV = [
   ['home', 'Ana sayfa'],
-  ['profiles', 'Profiller'],
+  ['versions', 'Sürümler'],
   ['skins', 'Skinler'],
   ['market', 'Market'],
   ['settings', 'Ayarlar']
@@ -171,40 +275,67 @@ function go(page) {
 function render() {
   renderShell();
   const main = $('#main');
+  const keep = main.scrollTop;
   main.textContent = '';
-  const pages = { home: renderHome, profiles: renderProfiles, skins: renderSkins, market: renderMarket, settings: renderSettings };
+  const pages = { home: renderHome, versions: renderVersions, skins: renderSkins, market: renderMarket, settings: renderSettings };
   main.append(pages[S.page]());
+  main.scrollTop = keep;
   if (S.page === 'home') updateGameUI();
 }
 
 /* ---------- Ana sayfa ---------- */
 function renderHome() {
+  ensureMcProfile();
   const p = activeProfile();
   const acc = activeAccount();
+
   const sel = h('select', {
     class: 'hero-select',
-    'aria-label': 'Profil seç',
+    'aria-label': 'Sürüm seç',
     onchange: async (e) => {
       applyProfileState(await api.profiles.select(e.target.value));
       render();
     }
-  }, S.profiles.map((x) => h('option', { value: x.id, selected: x.id === S.activeProfile }, x.name)));
+  }, S.profiles.map((x) => h('option', { value: x.id, selected: x.id === S.activeProfile }, `${x.name} (${x.version})`)));
 
-  const play = h('button', { class: 'play', id: 'play', 'aria-label': 'Oyna', onclick: play_ , html: sliceSvg() });
+  const launch = h('button', {
+    class: 'launch', id: 'play', onclick: play_,
+    html: '<svg class="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>' +
+      '<svg class="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
+      '<svg class="i-busy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="32 20"/></svg>' +
+      '<span id="play-label">Oyunu başlat</span>'
+  });
+
+  const skinBox = h('div', { class: 'hero-skin' });
+  const hs = accountSkin() || (S.skins[0] && { dataUrl: S.skins[0].dataUrl, slim: S.skins[0].variant === 'slim' });
+  if (hs && HAS3D) {
+    const canvas = h('canvas', { 'aria-label': 'Karakter önizlemesi' });
+    skinBox.append(canvas);
+    const v = new window.Skin3D(canvas, { animated: S.settings.viewerAnimation !== false });
+    v.setSkin(hs.dataUrl, hs.slim).then(() => v.setCape(activeCapeUrl())).catch(() => {});
+  } else if (hs) {
+    const c = h('canvas', { width: '16', height: '32', style: 'width:110px;height:220px;image-rendering:pixelated' });
+    skinBox.append(c);
+    drawSkin2D(c, hs.dataUrl, hs.slim);
+  } else {
+    skinBox.append(h('div', { class: 'hero-empty' }, h('span', { html: LOGO }), 'Skinlerim sayfasından bir skin ekle, karakterin burada görünsün.'));
+  }
 
   return h('section', {},
-    h('div', { class: 'hero' },
-      h('div', { class: 'hero-text' },
-        h('h1', {}, p ? p.name : 'Profil yok'),
-        h('div', { class: 'hero-meta' },
-          h('div', {}, 'Minecraft ', h('b', {}, p ? p.version : '-')),
-          h('div', {}, h('b', {}, p ? (p.maxRam / 1024).toFixed(p.maxRam % 1024 ? 1 : 0) + ' GB' : '-'), ' bellek'),
-          h('div', {}, acc ? ['Oyuncu ', h('b', {}, acc.name)] : 'Oynamak için bir hesap ekle')),
-        sel),
-      play),
-    h('div', { class: 'status' },
-      h('div', { class: 'status-text', id: 'status-text' }),
-      h('div', { class: 'bar', id: 'bar' }, h('i', { id: 'bar-fill' }))),
+    h('div', { class: 'hero-card' },
+      h('div', { class: 'hero-main' },
+        h('h1', {}, p ? 'Minecraft ' + p.version : 'Sürüm yok'),
+        h('div', { class: 'hero-name' }, p ? p.name : 'Sürümler sayfasından bir sürüm ekle.'),
+        h('div', { class: 'chips' },
+          p ? h('span', { class: 'chip' }, gb(p.maxRam) + ' GB bellek') : null,
+          acc
+            ? h('span', { class: 'chip' }, acc.name + (acc.type === 'microsoft' ? ' (Microsoft)' : ' (çevrimdışı)'))
+            : h('button', { class: 'chip', onclick: openAccounts }, 'Hesap ekle')),
+        h('div', { class: 'hero-actions' }, launch, S.profiles.length > 1 ? sel : null),
+        h('div', { class: 'status' },
+          h('div', { class: 'status-text', id: 'status-text' }),
+          h('div', { class: 'bar', id: 'bar' }, h('i', { id: 'bar-fill' })))),
+      skinBox),
     h('pre', { class: 'log', id: 'log', hidden: !S.settings.showLog })
   );
 }
@@ -234,7 +365,7 @@ function updateGameUI() {
   const { state, task, percent } = S.game;
   btn.classList.toggle('busy', state === 'preparing');
   btn.classList.toggle('running', state === 'running');
-  btn.setAttribute('aria-label', state === 'running' ? 'Durdur' : 'Oyna');
+  $('#play-label').textContent = state === 'running' ? 'Oyunu durdur' : state === 'preparing' ? 'Hazırlanıyor' : 'Oyunu başlat';
 
   const text = $('#status-text');
   const bar = $('#bar');
@@ -265,6 +396,7 @@ function bindGameEvents() {
     if (state === 'idle' && code != null && code !== 0) {
       toast('Oyun beklenmedik şekilde kapandı (kod ' + code + '). Günlüğe bak.', 'error');
     }
+    if (state === 'idle') loadInstalled();
   });
   api.game.onProgress(({ task, percent }) => {
     if (S.game.state === 'preparing') setGame({ task, percent });
@@ -281,11 +413,12 @@ function openAccounts() {
   const box = h('div');
   const m = modal('Hesaplar', box, [h('button', { class: 'btn', onclick: () => m.remove() }, 'Kapat')]);
 
-  const nameInput = h('input', { type: 'text', placeholder: 'Oyuncu adı', maxlength: '16', 'aria-label': 'Çevrimdışı oyuncu adı' });
+  const nameInput = h('input', { type: 'text', placeholder: 'Oyuncu adı', maxlength: '16', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Çevrimdışı oyuncu adı' });
+  nameInput.addEventListener('mousedown', () => setTimeout(() => nameInput.focus(), 0));
 
   const draw = () => {
     box.textContent = '';
-    if (!S.accounts.length) box.append(h('p', { class: 'page-sub' }, 'Henüz hesap yok. Microsoft ile giriş yap ya da çevrimdışı bir oyuncu adı ekle.'));
+    if (!S.accounts.length) box.append(h('p', { class: 'note' }, 'Henüz hesap yok. Microsoft ile giriş yap ya da çevrimdışı bir oyuncu adı ekle.'));
     for (const a of S.accounts) {
       const isActive = a.id === S.activeAccount;
       box.append(
@@ -293,8 +426,8 @@ function openAccounts() {
           avatar(a),
           h('div', { class: 'info' }, h('b', {}, a.name), h('small', {}, a.type === 'microsoft' ? 'Microsoft hesabı' : 'Çevrimdışı hesap')),
           isActive
-            ? h('span', { class: 'tag lemon' }, 'Aktif')
-            : h('button', { class: 'btn small', onclick: async () => { applyAccountState(await api.accounts.select(a.id)); draw(); renderShell(); } }, 'Seç'),
+            ? h('span', { class: 'tag accent' }, 'Aktif')
+            : h('button', { class: 'btn small', onclick: async () => { applyAccountState(await api.accounts.select(a.id)); draw(); render(); } }, 'Seç'),
           h('button', { class: 'btn small danger', onclick: async () => { applyAccountState(await api.accounts.remove(a.id)); draw(); render(); } }, 'Kaldır'))
       );
     }
@@ -306,14 +439,15 @@ function openAccounts() {
       if (applyAccountState(r)) { toast('Microsoft hesabı eklendi.', 'ok'); render(); }
       else toast(r.error, 'error');
       draw();
+      window.focus();
     } }, 'Microsoft ile giriş yap');
 
     const addOffline = async () => {
       const r = await api.accounts.addOffline(nameInput.value);
-      if (applyAccountState(r)) { render(); draw(); }
+      if (applyAccountState(r)) { nameInput.value = ''; render(); draw(); }
       else toast(r.error, 'error');
     };
-    nameInput.onkeydown = (e) => e.key === 'Enter' && addOffline();
+    nameInput.onkeydown = (e) => { if (e.key === 'Enter') addOffline(); };
 
     box.append(
       h('div', { class: 'section-label' }, 'Hesap ekle'),
@@ -323,39 +457,114 @@ function openAccounts() {
     );
   };
   draw();
+  setTimeout(() => nameInput.focus(), 80);
 }
 
-/* ---------- Profiller ---------- */
-function renderProfiles() {
+/* ---------- Sürümler ---------- */
+function renderVersions() {
+  loadInstalled().then(() => {
+    if (S.page === 'versions') {
+      // yalnızca "İndirildi" etiketlerini güncelle
+      document.querySelectorAll('[data-ver]').forEach((el) => {
+        el.hidden = !S.installed.includes(el.dataset.ver);
+      });
+    }
+  });
+
+  const tiles = S.profiles.map((p) => {
+    const active = p.id === S.activeProfile;
+    return h('div', {
+      class: 'ver-tile' + (active ? ' active' : ''), tabindex: '0', role: 'button',
+      onclick: async () => { if (!active) { applyProfileState(await api.profiles.select(p.id)); render(); } },
+      onkeydown: async (e) => { if ((e.key === 'Enter' || e.key === ' ') && !active) { e.preventDefault(); applyProfileState(await api.profiles.select(p.id)); render(); } }
+    },
+      h('div', { class: 'ver-top' },
+        h('span', { class: 'ver-num' }, p.version),
+        h('span', { class: 'tag', 'data-ver': p.version, hidden: !S.installed.includes(p.version) }, 'İndirildi')),
+      h('div', { class: 'ver-name' }, p.name),
+      h('div', { class: 'chips' },
+        h('span', { class: 'chip' }, gb(p.maxRam) + ' GB'),
+        h('span', { class: 'chip' }, p.width + '×' + p.height),
+        active ? h('span', { class: 'tag accent' }, 'Seçili') : null),
+      h('div', { class: 'ver-actions' },
+        h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); openProfileModal(p); } }, 'Ayarla'),
+        h('button', { class: 'btn small danger', onclick: async (e) => {
+          e.stopPropagation();
+          const r = await api.profiles.remove(p.id);
+          if (applyProfileState(r)) render(); else toast(r.error, 'error');
+        } }, 'Sil')));
+  });
+
+  tiles.push(
+    h('div', { class: 'ver-tile add', tabindex: '0', role: 'button', onclick: openVersionPicker,
+      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openVersionPicker(); } } },
+      h('div', { class: 'plus' }, '+'), h('div', {}, 'Sürüm ekle'))
+  );
+
   return h('section', {},
     h('div', { class: 'page-head' },
       h('div', {},
-        h('h1', { class: 'page-title' }, 'Profiller'),
-        h('p', { class: 'page-sub' }, 'Her profil kendi Minecraft sürümüne, belleğine ve pencere boyutuna sahip olur.')),
-      h('button', { class: 'btn primary', onclick: () => openProfileModal(null) }, 'Yeni profil')),
-    h('div', { class: 'cards' },
-      S.profiles.map((p) =>
-        h('div', { class: 'card' + (p.id === S.activeProfile ? ' active' : '') },
-          h('div', { class: 'info' },
-            h('b', {}, p.name, p.id === S.activeProfile ? h('span', { class: 'tag lemon' }, 'Seçili') : null),
-            h('small', {}, `Minecraft ${p.version}, ${(p.maxRam / 1024).toFixed(p.maxRam % 1024 ? 1 : 0)} GB bellek`)),
-          h('div', { class: 'actions' },
-            p.id === S.activeProfile ? null : h('button', { class: 'btn small', onclick: async () => { applyProfileState(await api.profiles.select(p.id)); render(); } }, 'Seç'),
-            h('button', { class: 'btn small', onclick: () => openProfileModal(p) }, 'Düzenle'),
-            h('button', { class: 'btn small danger', onclick: async () => {
-              const r = await api.profiles.remove(p.id);
-              if (applyProfileState(r)) render(); else toast(r.error, 'error');
-            } }, 'Sil')))))
+        h('h1', { class: 'page-title' }, 'Sürümler'),
+        h('p', { class: 'page-sub' }, 'Oynamak istediğin Minecraft sürümlerini ekle. Her sürümün belleği ve pencere boyutu ayrı ayarlanır, seçtiğin sürüm ana sayfadan başlar.')),
+      h('button', { class: 'btn primary', onclick: openVersionPicker }, 'Sürüm ekle')),
+    h('div', { class: 'ver-grid' }, tiles)
   );
+}
+
+async function openVersionPicker() {
+  if (!S.versions || !S.versions.length) await loadVersions();
+  let filter = 'release';
+  let query = '';
+  const FILTERS = [['release', 'Sürümler'], ['snapshot', 'Snapshot'], ['old', 'Eski sürümler']];
+  const matches = (v) => filter === 'release' ? v.type === 'release' : filter === 'snapshot' ? v.type === 'snapshot' : v.type.startsWith('old');
+
+  const search = h('input', { type: 'text', placeholder: 'Sürüm ara, örneğin 1.20', autocomplete: 'off', 'aria-label': 'Sürüm ara' });
+  const chips = h('div', { class: 'chips' });
+  const list = h('div', { class: 'vp-list' });
+
+  const draw = () => {
+    chips.textContent = '';
+    for (const [id, label] of FILTERS) {
+      chips.append(h('button', { class: 'chip' + (filter === id ? ' on' : ''), onclick: () => { filter = id; draw(); } }, label));
+    }
+    list.textContent = '';
+    const rows = (S.versions || []).filter((v) => matches(v) && v.id.toLowerCase().includes(query)).slice(0, 150);
+    if (!rows.length) list.append(h('div', { class: 'vp-empty' }, 'Bu aramayla eşleşen sürüm yok.'));
+    for (const v of rows) {
+      list.append(h('div', { class: 'vp-row' },
+        h('b', {}, v.id),
+        h('small', {}, v.releaseTime ? v.releaseTime.slice(0, 10) : ''),
+        S.installed.includes(v.id) ? h('span', { class: 'tag' }, 'İndirildi') : null,
+        h('button', { class: 'btn small primary', onclick: () => addVersion(v) }, 'Ekle')));
+    }
+  };
+  search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); draw(); });
+
+  const addVersion = async (v) => {
+    const r = await api.profiles.save({
+      name: 'Minecraft ' + v.id, version: v.id, type: v.type,
+      minRam: 1024, maxRam: S.settings.defaultMaxRam || 4096, jvmArgs: '', width: 854, height: 480
+    });
+    if (!applyProfileState(r)) return toast(r.error, 'error');
+    const added = S.profiles[S.profiles.length - 1];
+    applyProfileState(await api.profiles.select(added.id));
+    m.remove();
+    render();
+    toast(v.id + ' eklendi ve seçildi.', 'ok');
+  };
+
+  const m = modal('Sürüm ekle', h('div', {}, h('div', { class: 'vp-tools' }, search, chips), list), [
+    h('button', { class: 'btn', onclick: () => m.remove() }, 'Kapat')
+  ]);
+  draw();
+  setTimeout(() => search.focus(), 60);
 }
 
 async function openProfileModal(existing) {
   if (!S.versions || !S.versions.length) await loadVersions();
-  const p = existing
-    ? { ...existing }
-    : { name: 'Yeni profil', version: (S.versions.find((v) => v.type === 'release') || {}).id || '1.21.1', type: 'release', minRam: 1024, maxRam: 4096, jvmArgs: '', width: 854, height: 480 };
+  const p = { ...existing };
 
-  const name = h('input', { type: 'text', value: p.name, maxlength: '32', 'aria-label': 'Profil adı' });
+  const name = h('input', { type: 'text', value: p.name, maxlength: '32', 'aria-label': 'Ad' });
   const sel = h('select', { 'aria-label': 'Sürüm' });
   const showAll = h('input', { type: 'checkbox' });
   const fill = () => {
@@ -368,26 +577,35 @@ async function openProfileModal(existing) {
   showAll.addEventListener('change', () => { p.version = sel.value; fill(); });
   fill();
 
-  const minRam = h('input', { type: 'number', value: p.minRam, min: '512', step: '256', 'aria-label': 'Minimum bellek' });
-  const maxRam = h('input', { type: 'number', value: p.maxRam, min: '1024', step: '256', 'aria-label': 'Maksimum bellek' });
+  const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
+  const ramLabel = h('b', {}, gb(p.maxRam) + ' GB');
+  const slider = h('input', { type: 'range', min: '1024', max: String(cap), step: '256', value: String(Math.min(p.maxRam, cap)), 'aria-label': 'Bellek' });
+  slider.addEventListener('input', () => { ramLabel.textContent = gb(Number(slider.value)) + ' GB'; });
+  const presets = h('div', { class: 'chips' }, [2048, 4096, 6144, 8192].filter((v) => v <= cap).map((v) =>
+    h('button', { class: 'chip', onclick: () => { slider.value = String(v); slider.dispatchEvent(new Event('input')); } }, gb(v) + ' GB')));
+
+  const minRam = h('input', { type: 'number', value: p.minRam, min: '512', step: '256', 'aria-label': 'En az bellek' });
   const jvm = h('input', { type: 'text', value: p.jvmArgs, placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'JVM argümanları' });
   const width = h('input', { type: 'number', value: p.width, min: '320', 'aria-label': 'Genişlik' });
   const height = h('input', { type: 'number', value: p.height, min: '240', 'aria-label': 'Yükseklik' });
 
   const body = h('div', {},
-    h('div', { class: 'field' }, h('label', {}, 'Profil adı'), name),
-    h('div', { class: 'field' }, h('label', {}, 'Sürüm'), sel,
+    h('div', { class: 'field' }, h('label', {}, 'Ad'), name),
+    h('div', { class: 'field' }, h('label', {}, 'Minecraft sürümü'), sel,
       h('label', { class: 'row' }, showAll, h('small', {}, 'Snapshot ve eski sürümleri de göster'))),
-    h('div', { class: 'grid-2' },
+    h('div', { class: 'field ram-box' },
+      h('div', { class: 'ram-top' }, ramLabel, h('small', {}, 'Bu bilgisayarda ' + gb(S.sys.totalMemMB) + ' GB RAM var')),
+      slider, presets),
+    h('details', { class: 'adv' },
+      h('summary', {}, 'Gelişmiş ayarlar'),
+      h('div', { class: 'grid-2' },
+        h('div', { class: 'field' }, h('label', {}, 'Pencere genişliği'), width),
+        h('div', { class: 'field' }, h('label', {}, 'Pencere yüksekliği'), height)),
       h('div', { class: 'field' }, h('label', {}, 'En az bellek (MB)'), minRam),
-      h('div', { class: 'field' }, h('label', {}, 'En çok bellek (MB)'), maxRam)),
-    h('div', { class: 'grid-2' },
-      h('div', { class: 'field' }, h('label', {}, 'Pencere genişliği'), width),
-      h('div', { class: 'field' }, h('label', {}, 'Pencere yüksekliği'), height)),
-    h('div', { class: 'field' }, h('label', {}, 'Ek JVM argümanları'), jvm)
+      h('div', { class: 'field' }, h('label', {}, 'Bu sürüme özel JVM argümanları'), jvm))
   );
 
-  const m = modal(existing ? 'Profili düzenle' : 'Yeni profil', body, [
+  const m = modal('Sürümü ayarla', body, [
     h('button', { class: 'btn', onclick: () => m.remove() }, 'Vazgeç'),
     h('button', { class: 'btn primary', onclick: async () => {
       const v = (S.versions || []).find((x) => x.id === sel.value);
@@ -395,106 +613,124 @@ async function openProfileModal(existing) {
         ...p,
         name: name.value,
         version: sel.value,
-        type: v ? v.type : 'release',
-        minRam: Number(minRam.value),
-        maxRam: Number(maxRam.value),
+        type: v ? v.type : p.type,
+        minRam: Math.min(Number(minRam.value) || 1024, Number(slider.value)),
+        maxRam: Number(slider.value),
         jvmArgs: jvm.value,
         width: Number(width.value),
         height: Number(height.value)
       });
-      if (applyProfileState(r)) { m.remove(); render(); toast('Profil kaydedildi.', 'ok'); }
+      if (applyProfileState(r)) { m.remove(); render(); toast('Kaydedildi.', 'ok'); }
       else toast(r.error, 'error');
     } }, 'Kaydet')
   ]);
 }
 
 /* ---------- Skinler ---------- */
-function drawSkin(canvas, dataUrl, slim) {
-  const img = new Image();
-  img.onload = () => {
-    const c = canvas.getContext('2d');
-    c.imageSmoothingEnabled = false;
-    c.clearRect(0, 0, 16, 32);
-    const legacy = img.height === 32;
-    const aw = slim ? 3 : 4;
-    const blit = (sx, sy, sw, sh, dx, dy, mirror) => {
-      if (mirror) {
-        c.save();
-        c.translate(dx + sw, dy);
-        c.scale(-1, 1);
-        c.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-        c.restore();
-      } else {
-        c.drawImage(img, sx, sy, sw, sh, dx, dy, sw, sh);
-      }
-    };
-    // temel katman
-    blit(8, 8, 8, 8, 4, 0);
-    blit(20, 20, 8, 12, 4, 8);
-    blit(44, 20, aw, 12, slim ? 1 : 0, 8);
-    if (legacy) blit(44, 20, aw, 12, 12, 8, true); else blit(36, 52, aw, 12, 12, 8);
-    blit(4, 20, 4, 12, 4, 20);
-    if (legacy) blit(4, 20, 4, 12, 8, 20, true); else blit(20, 52, 4, 12, 8, 20);
-    // üst katman
-    blit(40, 8, 8, 8, 4, 0);
-    if (!legacy) {
-      blit(20, 36, 8, 12, 4, 8);
-      blit(44, 36, aw, 12, slim ? 1 : 0, 8);
-      blit(52, 52, aw, 12, 12, 8);
-      blit(4, 36, 4, 12, 4, 20);
-      blit(4, 52, 4, 12, 8, 20);
+function renderSkins() {
+  ensureMcProfile();
+  let viewer = null;
+
+  if (!S.stage) S.stage = accountSkin() || (S.skins[0] && { id: S.skins[0].id, dataUrl: S.skins[0].dataUrl, slim: S.skins[0].variant === 'slim', label: S.skins[0].name }) || null;
+
+  const stageView = h('div', { class: 'stage-view' });
+  const hint = h('p', { class: 'stage-hint' }, 'Sürükleyerek döndür, tekerlekle yaklaş.');
+  const label = h('p', { class: 'stage-label' });
+  const grid = h('div');
+  const capeBox = h('div');
+  const t3d = h('button', { class: 'tog', onclick: async () => {
+    await setSetting({ viewer3d: !use3D() });
+    syncTools(); drawStage(); drawGrid();
+  } }, '3D görünüm');
+  const tAnim = h('button', { class: 'tog', onclick: async () => {
+    await setSetting({ viewerAnimation: S.settings.viewerAnimation === false });
+    syncTools();
+    if (viewer) viewer.setAnimated(S.settings.viewerAnimation !== false);
+  } }, 'Animasyon');
+
+  const syncTools = () => {
+    t3d.classList.toggle('on', use3D());
+    t3d.disabled = !HAS3D;
+    if (!HAS3D) t3d.title = 'Bu bilgisayarda WebGL kullanılamıyor';
+    tAnim.classList.toggle('on', S.settings.viewerAnimation !== false && use3D());
+    tAnim.disabled = !use3D();
+    hint.hidden = !use3D();
+  };
+
+  const currentCape = () => {
+    const capes = S.mc.capes || [];
+    if (S.previewCape === undefined) return activeCapeUrl();
+    if (S.previewCape === null) return null;
+    const c = capes.find((x) => x.id === S.previewCape);
+    return c ? c.dataUrl : null;
+  };
+
+  const drawStage = () => {
+    if (viewer) { viewer.dispose(); viewer = null; }
+    stageView.textContent = '';
+    const st = S.stage;
+    if (!st) {
+      label.textContent = '';
+      stageView.append(h('div', { class: 'note' }, 'Bir skin ekle veya seç.'));
+      return;
+    }
+    label.textContent = st.label;
+    if (use3D()) {
+      const canvas = h('canvas', { class: 's3d', 'aria-label': 'Skin önizlemesi' });
+      stageView.append(canvas);
+      viewer = new window.Skin3D(canvas, { animated: S.settings.viewerAnimation !== false });
+      const v = viewer;
+      v.setSkin(st.dataUrl, st.slim).then(() => v.setCape(currentCape())).catch(() => toast('3D önizleme başlatılamadı.', 'error'));
+    } else {
+      const c = h('canvas', { class: 's2d', width: '16', height: '32', 'aria-label': 'Skin önizlemesi' });
+      stageView.append(c);
+      drawSkin2D(c, st.dataUrl, st.slim);
     }
   };
-  img.src = dataUrl;
-}
 
-function renderSkins() {
-  if (!S.stage && S.skins.length) {
-    const s = S.skins[0];
+  const selectSkin = (s) => {
     S.stage = { id: s.id, dataUrl: s.dataUrl, slim: s.variant === 'slim', label: s.name };
-  }
-  const canvas = h('canvas', { width: '16', height: '32', 'aria-label': 'Skin önizlemesi' });
-  const note = h('p', {}, S.stage ? S.stage.label : 'Bir skin seç veya ekle.');
-  if (S.stage) drawSkin(canvas, S.stage.dataUrl, S.stage.slim);
-
-  const showCurrent = async () => {
-    const r = await api.skins.current();
-    if (!r.ok) return toast(r.error, 'error');
-    if (!r.skin) return toast('Hesabında özel bir skin görünmüyor.');
-    S.stage = { id: null, dataUrl: r.skin.dataUrl, slim: r.skin.variant === 'slim', label: 'Hesabındaki skin' };
-    render();
+    drawStage(); drawGrid();
   };
-
-  const stage = h('div', { class: 'skin-stage' }, canvas, note,
-    h('button', { class: 'btn small', onclick: showCurrent }, 'Hesabımdaki skini göster'));
 
   const addSkins = async () => {
     const r = await api.skins.add();
     if (!r.ok) return toast(r.error, 'error');
     S.skins = r.skins;
     if (r.skipped && r.skipped.length) toast(r.skipped.join(', ') + ' atlandı. Skin 64x64 veya 64x32 PNG olmalı.', 'error');
-    render();
+    if (!S.stage && S.skins[0]) selectSkin(S.skins[0]); else drawGrid();
   };
 
-  let grid;
-  if (!S.skins.length) {
-    grid = h('div', { class: 'empty' }, 'Kütüphanen boş. Bir PNG skin dosyası ekleyerek başla.',
-      h('div', {}, h('button', { class: 'btn primary', onclick: addSkins }, 'Skin ekle')));
-  } else {
-    grid = h('div', { class: 'skin-grid' }, S.skins.map((s) => {
-      const c = h('canvas', { width: '16', height: '32', title: 'Önizle', onclick: () => {
-        S.stage = { id: s.id, dataUrl: s.dataUrl, slim: s.variant === 'slim', label: s.name };
-        render();
-      } });
-      drawSkin(c, s.dataUrl, s.variant === 'slim');
+  const drawGrid = () => {
+    grid.textContent = '';
+    if (!S.skins.length) {
+      grid.append(h('div', { class: 'empty' }, 'Kütüphanen boş. Bir PNG skin dosyası ekleyerek başla.',
+        h('div', {}, h('button', { class: 'btn primary', onclick: addSkins }, 'Skin ekle'))));
+      return;
+    }
+    const cards = S.skins.map((s) => {
+      const view = h('div', { class: 'view', title: 'Önizle', onclick: () => selectSkin(s) });
+      if (use3D()) {
+        snapshot3D(s.dataUrl, s.variant === 'slim').then((url) => {
+          view.textContent = '';
+          view.append(h('img', { src: url, alt: s.name, draggable: 'false' }));
+        }).catch(() => {
+          const c = h('canvas', { class: 's2d', width: '16', height: '32' });
+          view.append(c); drawSkin2D(c, s.dataUrl, s.variant === 'slim');
+        });
+      } else {
+        const c = h('canvas', { class: 's2d', width: '16', height: '32' });
+        view.append(c);
+        drawSkin2D(c, s.dataUrl, s.variant === 'slim');
+      }
       const setVariant = async (v) => {
         const r = await api.skins.setVariant(s.id, v);
         S.skins = r.skins;
         if (S.stage && S.stage.id === s.id) S.stage.slim = v === 'slim';
-        render();
+        drawStage(); drawGrid();
       };
       return h('div', { class: 'skin-card' + (S.stage && S.stage.id === s.id ? ' selected' : '') },
-        c,
+        view,
         h('b', { title: s.name }, s.name),
         h('div', { class: 'seg' },
           h('button', { class: s.variant !== 'slim' ? 'on' : '', onclick: () => setVariant('classic') }, 'Klasik'),
@@ -502,24 +738,89 @@ function renderSkins() {
         h('div', { class: 'btns' },
           h('button', { class: 'btn small primary', onclick: async () => {
             const r = await api.skins.apply(s.id);
-            if (r.ok) toast('Skin hesabına yüklendi. Oyuna girince görünür.', 'ok'); else toast(r.error, 'error');
+            if (r.ok) { toast('Skin hesabına yüklendi. Oyuna girince görünür.', 'ok'); ensureMcProfile(true); }
+            else toast(r.error, 'error');
           } }, 'Hesaba uygula'),
           h('button', { class: 'btn small danger', onclick: async () => {
             const r = await api.skins.remove(s.id);
             S.skins = r.skins;
             if (S.stage && S.stage.id === s.id) S.stage = null;
-            render();
+            if (!S.stage) S.stage = accountSkin() || (S.skins[0] && { id: S.skins[0].id, dataUrl: S.skins[0].dataUrl, slim: S.skins[0].variant === 'slim', label: S.skins[0].name }) || null;
+            drawStage(); drawGrid();
           } }, 'Sil')));
-    }));
-  }
+    });
+    grid.append(h('div', { class: 'skin-grid' }, cards));
+  };
+
+  const drawCapes = () => {
+    capeBox.textContent = '';
+    const acc = activeAccount();
+    if (!acc || acc.type !== 'microsoft') {
+      capeBox.append(h('p', { class: 'note' }, 'Pelerinler yalnızca orijinal (Microsoft) hesaplarda kullanılabilir. Pelerinlerini görmek için Microsoft ile giriş yap.'));
+      return;
+    }
+    if (S.mc.loading) return capeBox.append(h('p', { class: 'note' }, 'Pelerinler yükleniyor…'));
+    if (S.mc.error) return capeBox.append(h('p', { class: 'note' }, 'Pelerinler alınamadı: ' + S.mc.error));
+    const capes = S.mc.capes || [];
+    if (!capes.length) return capeBox.append(h('p', { class: 'note' }, 'Bu hesapta pelerin yok.'));
+
+    const selectedId = S.previewCape === undefined ? (capes.find((c) => c.active) || {}).id : S.previewCape;
+    capeBox.append(
+      h('div', { class: 'cape-grid' }, capes.map((c) => {
+        const cv = h('canvas', { width: '10', height: '16', title: 'Önizle', onclick: () => { S.previewCape = c.id; drawStage(); drawCapes(); } });
+        drawCapeThumb(cv, c.dataUrl);
+        return h('div', { class: 'cape-card' + (selectedId === c.id ? ' selected' : '') },
+          cv, h('b', { title: c.alias }, c.alias),
+          h('div', { class: 'btns' },
+            c.active
+              ? h('span', { class: 'tag accent' }, 'Hesapta aktif')
+              : h('button', { class: 'btn small primary', onclick: async () => {
+                const r = await api.capes.set(c.id);
+                if (r.ok) { toast('Pelerin değiştirildi.', 'ok'); S.previewCape = undefined; await ensureMcProfile(true); }
+                else toast(r.error, 'error');
+              } }, 'Hesapta kullan')));
+      })),
+      capes.some((c) => c.active)
+        ? h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn small', onclick: async () => {
+          const r = await api.capes.set(null);
+          if (r.ok) { toast('Pelerin gizlendi.', 'ok'); S.previewCape = undefined; await ensureMcProfile(true); }
+          else toast(r.error, 'error');
+        } }, 'Pelerini gizle'))
+        : null
+    );
+  };
+
+  const showAccountSkin = async () => {
+    const acc = activeAccount();
+    if (!acc || acc.type !== 'microsoft') return toast('Hesabındaki skini görmek için Microsoft hesabıyla giriş yap.', 'error');
+    await ensureMcProfile(true);
+    const a = accountSkin();
+    if (!a) return toast(S.mc.error || 'Hesabında özel bir skin görünmüyor.');
+    S.stage = a;
+    drawStage(); drawGrid();
+  };
+
+  const stage = h('div', { class: 'skin-stage' },
+    h('div', { class: 'stage-tools' }, t3d, tAnim),
+    stageView, label,
+    h('button', { class: 'btn small', onclick: showAccountSkin }, 'Hesabımdaki skini göster'),
+    hint);
+
+  syncTools(); drawStage(); drawGrid(); drawCapes();
 
   return h('section', {},
     h('div', { class: 'page-head' },
       h('div', {},
         h('h1', { class: 'page-title' }, 'Skinler'),
-        h('p', { class: 'page-sub' }, 'Skinlerini kütüphanende sakla ve Microsoft hesabına tek tıkla yükle. Çevrimdışı hesaplar için skin sunucu tarafında belirlenir, bu yüzden yükleme yapılamaz.')),
+        h('p', { class: 'page-sub' }, 'Skinlerini kütüphanende sakla ve Microsoft hesabına tek tıkla yükle. Çevrimdışı hesaplarda skin sunucu tarafından belirlendiği için yükleme yapılamaz.')),
       h('button', { class: 'btn primary', onclick: addSkins }, 'Skin ekle')),
-    h('div', { class: 'skin-layout' }, stage, grid)
+    h('div', { class: 'skin-layout' },
+      stage,
+      h('div', { class: 'skin-side' },
+        h('div', { class: 'side-head' }, h('h2', {}, 'Kütüphane'), h('small', {}, S.skins.length + ' skin')),
+        grid,
+        h('div', { class: 'side-head' }, h('h2', {}, 'Pelerinler')),
+        capeBox))
   );
 }
 
@@ -535,41 +836,86 @@ function renderMarket() {
 /* ---------- Ayarlar ---------- */
 function renderSettings() {
   const st = S.settings;
-  const set = async (patch) => {
-    const r = await api.settings.set(patch);
-    if (r.ok) S.settings = r.settings;
-    return r;
-  };
+
+  const row = (title, sub, ctl, cls) =>
+    h('div', { class: 'set-row' + (cls ? ' ' + cls : '') },
+      h('div', { class: 'set-text' }, h('b', {}, title), sub ? h('small', {}, sub) : null),
+      ctl ? h('div', { class: 'set-ctl' }, ctl) : null);
+  const sw = (key) =>
+    h('label', { class: 'switch' },
+      h('input', { type: 'checkbox', checked: !!st[key], onchange: (e) => setSetting({ [key]: e.target.checked }) }),
+      h('span'));
+  const group = (title, sub, ...rows) =>
+    h('div', { class: 'set-group' }, h('div', { class: 'set-title' }, h('h2', {}, title)), rows);
 
   const dirInput = h('input', { type: 'text', value: st.gameDir, readonly: true, 'aria-label': 'Oyun klasörü' });
-  const javaInput = h('input', { type: 'text', value: st.javaPath, placeholder: 'Otomatik (gereken Java kendiliğinden indirilir)', readonly: true, 'aria-label': 'Java yolu' });
+  const javaInput = h('input', { type: 'text', value: st.javaPath, placeholder: 'Boş bırakırsan otomatik seçilir', readonly: true, 'aria-label': 'Java yolu' });
+  const jvmInput = h('input', { type: 'text', value: st.globalJvmArgs || '', placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'Genel JVM argümanları' });
+  jvmInput.addEventListener('change', () => setSetting({ globalJvmArgs: jvmInput.value.trim() }));
 
-  const switchRow = (title, sub, key) =>
-    h('div', { class: 'toggle' },
-      h('div', {}, h('b', {}, title), h('small', {}, sub)),
-      h('label', { class: 'switch' },
-        h('input', { type: 'checkbox', checked: !!st[key], onchange: async (e) => { await set({ [key]: e.target.checked }); } }),
-        h('span')));
+  const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
+  const ramVal = h('b', {}, gb(st.defaultMaxRam || 4096) + ' GB');
+  const ram = h('input', { type: 'range', min: '1024', max: String(cap), step: '256', value: String(Math.min(st.defaultMaxRam || 4096, cap)), 'aria-label': 'Varsayılan bellek' });
+  ram.addEventListener('input', () => { ramVal.textContent = gb(Number(ram.value)) + ' GB'; });
+  ram.addEventListener('change', () => setSetting({ defaultMaxRam: Number(ram.value) }));
 
-  return h('section', { style: 'max-width: 640px' },
+  const ACCENTS = [['emerald', 'Zümrüt'], ['lemon', 'Limon'], ['ocean', 'Okyanus'], ['violet', 'Menekşe']];
+  const swatches = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Vurgu rengi' },
+    ACCENTS.map(([id, label]) => h('button', {
+      class: 'swatch' + ((st.accent || 'emerald') === id ? ' on' : ''), 'data-c': id, title: label, 'aria-label': label,
+      onclick: async () => { await setSetting({ accent: id }); render(); }
+    })));
+
+  return h('section', { class: 'set-wrap' },
     h('h1', { class: 'page-title' }, 'Ayarlar'),
-    h('p', { class: 'page-sub' }, 'Oyun dosyalarının nerede duracağını ve launcher’ın oyun sırasındaki davranışını buradan belirle.'),
-    h('div', { class: 'field' }, h('label', {}, 'Oyun klasörü'),
-      h('div', { class: 'row' }, h('div', { class: 'grow' }, dirInput),
-        h('button', { class: 'btn', onclick: async () => {
-          const r = await api.settings.pickFolder();
-          if (r.path) { await set({ gameDir: r.path }); dirInput.value = r.path; }
-        } }, 'Değiştir'),
-        h('button', { class: 'btn', onclick: () => api.settings.openGameDir() }, 'Aç'))),
-    h('div', { class: 'field' }, h('label', {}, 'Java yolu'),
-      h('div', { class: 'row' }, h('div', { class: 'grow' }, javaInput),
-        h('button', { class: 'btn', onclick: async () => {
-          const r = await api.settings.pickJava();
-          if (r.path) { await set({ javaPath: r.path }); javaInput.value = r.path; }
-        } }, 'Seç'),
-        h('button', { class: 'btn', onclick: async () => { await set({ javaPath: '' }); javaInput.value = ''; } }, 'Otomatik'))),
-    switchRow('Oyun açılınca launcher’ı küçült', 'Oyun kapanınca launcher geri gelir.', 'minimizeOnLaunch'),
-    switchRow('Oyun günlüğünü göster', 'Ana sayfada oyunun çıktısını gösterir.', 'showLog')
+    h('p', { class: 'page-sub' }, 'Oyunun nasıl başlayacağını ve launcher’ın görünümünü buradan belirle. Değişiklikler anında kaydedilir.'),
+
+    group('Oyun', '',
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Oyun klasörü'), h('small', {}, 'Sürümler, dünyalar ve modlar burada durur.')),
+        h('div', { class: 'row' }, h('div', { class: 'grow' }, dirInput),
+          h('button', { class: 'btn', onclick: async () => {
+            const r = await api.settings.pickFolder();
+            if (r.path) { await setSetting({ gameDir: r.path }); dirInput.value = r.path; loadInstalled(); }
+          } }, 'Değiştir'),
+          h('button', { class: 'btn', onclick: () => api.settings.openGameDir() }, 'Aç'))),
+      row('Java’yı otomatik indir', 'Sürümün ihtiyaç duyduğu Java kendiliğinden kurulur. Kapatırsan bilgisayardaki Java kullanılır.', sw('autoJava')),
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Özel Java yolu'), h('small', {}, 'Kendi Java kurulumunu kullanmak istersen javaw.exe dosyasını seç.')),
+        h('div', { class: 'row' }, h('div', { class: 'grow' }, javaInput),
+          h('button', { class: 'btn', onclick: async () => {
+            const r = await api.settings.pickJava();
+            if (r.path) { await setSetting({ javaPath: r.path }); javaInput.value = r.path; }
+          } }, 'Seç'),
+          h('button', { class: 'btn', onclick: async () => { await setSetting({ javaPath: '' }); javaInput.value = ''; } }, 'Sıfırla'))),
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Yeni sürümler için varsayılan bellek'), h('small', {}, 'Sürüm eklerken bu değer kullanılır. Her sürümü ayrıca değiştirebilirsin.')),
+        h('div', { class: 'ram-box' }, h('div', { class: 'ram-top' }, ramVal), ram)),
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Tüm sürümler için JVM argümanları'), h('small', {}, 'Ne yaptığını bilmiyorsan boş bırak.')),
+        jvmInput),
+      row('Tam ekran başlat', 'Oyun tam ekran açılır.', sw('fullscreen')),
+      row('Oyun açılınca launcher’ı küçült', 'Oyun kapanınca launcher geri gelir.', sw('minimizeOnLaunch'))
+    ),
+
+    group('Görünüm', '',
+      row('Vurgu rengi', 'Düğmelerin ve seçili öğelerin rengi.', swatches),
+      row('Arayüz animasyonları', 'Kapatırsan geçiş efektleri durur.', sw('animations')),
+      row('Skinleri 3D göster', 'Skin sayfasında ve kartlarda 3D önizleme kullanılır.', sw('viewer3d')),
+      row('3D karakter animasyonu', 'Karakter yürür ve yavaşça döner.', sw('viewerAnimation')),
+      row('Oyun günlüğünü göster', 'Ana sayfada oyunun çıktısını gösterir.', h('label', { class: 'switch' },
+        h('input', { type: 'checkbox', checked: !!st.showLog, onchange: (e) => setSetting({ showLog: e.target.checked }) }), h('span')))
+    ),
+
+    group('Bakım', '',
+      row('Launcher verileri', 'Hesaplar, profiller ve skin kütüphanesi burada saklanır.', h('button', { class: 'btn', onclick: () => api.settings.openDataDir() }, 'Klasörü aç')),
+      row('Ayarları sıfırla', 'Tüm ayarlar varsayılana döner. Hesapların, sürümlerin ve skinlerin silinmez.', h('button', { class: 'btn danger', onclick: async () => {
+        if (!confirm('Tüm ayarlar varsayılana dönsün mü?')) return;
+        const r = await api.settings.reset();
+        if (r.ok) { S.settings = r.settings; applySettings(); render(); toast('Ayarlar sıfırlandı.', 'ok'); }
+      } }, 'Sıfırla')),
+      h('div', { class: 'about' }, `Limon Launcher ${S.sys.version}`, h('br'), `Bu bilgisayarda ${gb(S.sys.totalMemMB)} GB RAM var.`, h('br'), HAS3D ? '3D önizleme kullanılabilir.' : '3D önizleme bu bilgisayarda kullanılamıyor.')
+    )
   );
 }
 
@@ -579,15 +925,20 @@ async function boot() {
   $('#btn-max').onclick = () => api.win.max();
   $('#btn-close').onclick = () => api.win.close();
 
-  const [a, p, s, k] = await Promise.all([api.accounts.list(), api.profiles.list(), api.settings.get(), api.skins.list()]);
+  const [a, p, s, k, sys] = await Promise.all([
+    api.accounts.list(), api.profiles.list(), api.settings.get(), api.skins.list(), api.system()
+  ]);
   applyAccountState(a);
   applyProfileState(p);
   if (s.ok) S.settings = s.settings;
   if (k.ok) S.skins = k.skins;
+  if (sys.ok) S.sys = sys;
+  applySettings();
 
   bindGameEvents();
   render();
   loadVersions();
+  loadInstalled();
 }
 
 boot();

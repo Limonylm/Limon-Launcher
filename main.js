@@ -1,5 +1,6 @@
 // Limon Launcher - ana süreç (Electron main process)
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, Menu, session } = require('electron');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -12,6 +13,9 @@ let store = null;
 let storeFile = null;
 let skinDir = null;
 let running = null; // çalışan oyun süreci
+
+// Microsoft giriş penceresi ve Chromium arayüzü Türkçe açılsın
+app.commandLine.appendSwitch('lang', 'tr');
 
 const MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json';
 
@@ -37,12 +41,24 @@ function defaultStore() {
     ],
     activeProfile: 'default',
     skins: [],
-    settings: {
-      gameDir: path.join(app.getPath('appData'), '.limon'),
-      javaPath: '',
-      minimizeOnLaunch: true,
-      showLog: true
-    }
+    settings: defaultSettings()
+  };
+}
+
+function defaultSettings() {
+  return {
+    gameDir: path.join(app.getPath('appData'), '.limon'),
+    javaPath: '',
+    autoJava: true,
+    defaultMaxRam: 4096,
+    globalJvmArgs: '',
+    fullscreen: false,
+    minimizeOnLaunch: true,
+    showLog: true,
+    accent: 'emerald',
+    animations: true,
+    viewer3d: true,
+    viewerAnimation: true
   };
 }
 
@@ -226,7 +242,7 @@ async function download(url, file, onProgress) {
 
 async function ensureJava(major) {
   if (store.settings.javaPath) return store.settings.javaPath;
-  if (process.platform !== 'win32') return 'java';
+  if (process.platform !== 'win32' || store.settings.autoJava === false) return 'java';
 
   const dest = path.join(store.settings.gameDir, 'runtime', 'java-' + major);
   let bin = javaBinIn(dest);
@@ -272,7 +288,27 @@ handle('accounts:add-offline', async (name) => {
   return accountState();
 });
 
+// Microsoft giriş penceresi kapanınca Electron bazen ana pencerenin yazı alanlarına odağı geri vermez.
+function restoreFocus() {
+  const fix = () => {
+    if (!win || win.isDestroyed()) return;
+    win.show();
+    win.focus();
+    win.webContents.focus();
+  };
+  fix();
+  setTimeout(fix, 250);
+}
+
 handle('accounts:login-ms', async () => {
+  try {
+    return await loginMicrosoft();
+  } finally {
+    restoreFocus();
+  }
+});
+
+async function loginMicrosoft() {
   let xbox;
   try {
     const authManager = new Auth('select_account');
@@ -303,7 +339,7 @@ handle('accounts:login-ms', async () => {
   }
   saveStore();
   return accountState();
-});
+}
 
 handle('accounts:select', async (id) => {
   if (store.accounts.some((a) => a.id === id)) {
@@ -332,7 +368,7 @@ handle('profiles:save', async (p) => {
   if (!name) return { ok: false, error: 'Profil adı boş olamaz.' };
   if (!p.version) return { ok: false, error: 'Bir sürüm seç.' };
   const minRam = Math.max(512, Number(p.minRam) || 1024);
-  const maxRam = Math.max(minRam, Number(p.maxRam) || 4096);
+  const maxRam = Math.max(minRam, Number(p.maxRam) || store.settings.defaultMaxRam || 4096);
   const clean = {
     id: p.id || crypto.randomUUID(),
     name,
@@ -373,8 +409,29 @@ handle('profiles:select', async (id) => {
 /* ------------------------------------------------------------------ */
 handle('settings:get', async () => ({ ok: true, settings: store.settings }));
 
+handle('settings:reset', async () => {
+  const keepDir = store.settings.gameDir;
+  store.settings = { ...defaultSettings(), gameDir: keepDir };
+  saveStore();
+  return { ok: true, settings: store.settings };
+});
+
+handle('settings:open-data-dir', async () => {
+  await shell.openPath(app.getPath('userData'));
+  return { ok: true };
+});
+
+handle('system:info', async () => ({
+  ok: true,
+  totalMemMB: Math.floor(os.totalmem() / 1048576),
+  version: app.getVersion(),
+  platform: process.platform
+}));
+
+handle('versions:installed', async () => ({ ok: true, ids: installedVersions().map((v) => v.id) }));
+
 handle('settings:set', async (patch) => {
-  const allowed = ['gameDir', 'javaPath', 'minimizeOnLaunch', 'showLog'];
+  const allowed = Object.keys(defaultSettings());
   for (const k of allowed) if (k in patch) store.settings[k] = patch[k];
   saveStore();
   return { ok: true, settings: store.settings };
@@ -444,8 +501,11 @@ handle('game:launch', async (profileId) => {
     javaPath,
     version: { number: profile.version, type: profile.type || 'release' },
     memory: { min: profile.minRam + 'M', max: profile.maxRam + 'M' },
-    customArgs: profile.jvmArgs ? profile.jvmArgs.split(/\s+/).filter(Boolean) : [],
-    window: { width: profile.width, height: profile.height }
+    customArgs: [
+      ...(store.settings.globalJvmArgs || '').split(/\s+/).filter(Boolean),
+      ...(profile.jvmArgs || '').split(/\s+/).filter(Boolean)
+    ],
+    window: { width: profile.width, height: profile.height, fullscreen: !!store.settings.fullscreen }
   });
 
   if (!proc) {
@@ -557,6 +617,13 @@ handle('skins:apply', async (id) => {
   return { ok: true };
 });
 
+async function fetchAsDataUrl(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Görsel indirilemedi (' + r.status + ')');
+  return toDataUrl(Buffer.from(await r.arrayBuffer()));
+}
+
+// Microsoft hesabının güncel skini ve pelerinleri
 handle('skins:current', async () => {
   const account = store.accounts.find((a) => a.id === store.activeAccount);
   if (!account || account.type !== 'microsoft') {
@@ -568,16 +635,41 @@ handle('skins:current', async () => {
   });
   if (!res.ok) throw new Error('Profil alınamadı (' + res.status + ')');
   const prof = await res.json();
-  const skin = (prof.skins || []).find((s) => s.state === 'ACTIVE') || (prof.skins || [])[0];
-  if (!skin) return { ok: true, skin: null };
-  const img = Buffer.from(await (await fetch(skin.url)).arrayBuffer());
-  return {
-    ok: true,
-    skin: {
-      dataUrl: toDataUrl(img),
-      variant: String(skin.variant || 'CLASSIC').toLowerCase() === 'slim' ? 'slim' : 'classic'
+
+  const skinInfo = (prof.skins || []).find((s) => s.state === 'ACTIVE') || (prof.skins || [])[0];
+  let skin = null;
+  if (skinInfo) {
+    skin = {
+      dataUrl: await fetchAsDataUrl(skinInfo.url),
+      variant: String(skinInfo.variant || 'CLASSIC').toLowerCase() === 'slim' ? 'slim' : 'classic'
+    };
+  }
+  const capes = [];
+  for (const c of prof.capes || []) {
+    try {
+      capes.push({ id: c.id, alias: c.alias || 'Pelerin', active: c.state === 'ACTIVE', dataUrl: await fetchAsDataUrl(c.url) });
+    } catch {
+      /* bu pelerini atla */
     }
-  };
+  }
+  return { ok: true, skin, capes };
+});
+
+// capeId verilirse o pelerini kullanır, null verilirse pelerini gizler
+handle('capes:set', async (capeId) => {
+  const account = store.accounts.find((a) => a.id === store.activeAccount);
+  if (!account || account.type !== 'microsoft') return { ok: false, error: 'Pelerin için Microsoft hesabı gerekli.' };
+  const { access_token } = await getAuthFor(account);
+  const url = 'https://api.minecraftservices.com/minecraft/profile/capes/active';
+  const res = capeId
+    ? await fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + access_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capeId })
+      })
+    : await fetch(url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + access_token } });
+  if (!res.ok) throw new Error('Pelerin değiştirilemedi (' + res.status + ')');
+  return { ok: true };
 });
 
 /* ------------------------------------------------------------------ */
@@ -628,6 +720,10 @@ if (!gotLock) {
     skinDir = path.join(app.getPath('userData'), 'skins');
     loadStore();
     Menu.setApplicationMenu(null);
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, cb) => {
+      details.requestHeaders['Accept-Language'] = 'tr-TR,tr;q=0.9,en;q=0.6';
+      cb({ requestHeaders: details.requestHeaders });
+    });
     createWindow();
   });
 
