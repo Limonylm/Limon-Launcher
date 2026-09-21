@@ -65,6 +65,7 @@ const LOGO =
 /* ---------- Durum ---------- */
 const S = {
   page: 'home',
+  contentFor: null, // Sürümler sayfasında içerik yönetimi açık olan sürümün id'si
   accounts: [],
   activeAccount: null,
   profiles: [],
@@ -289,6 +290,7 @@ function renderShell() {
 
 function go(page) {
   S.page = page;
+  S.contentFor = null;
   render();
 }
 
@@ -680,6 +682,15 @@ function renderSkins() {
         grid,
         h('div', { class: 'side-head' }, h('h2', {}, 'Pelerinler')),
         capeBox))
+  );
+}
+
+/* ---------- Market ---------- */
+function renderMarket() {
+  return h('section', {},
+    h('h1', { class: 'page-title' }, 'Market'),
+    h('p', { class: 'page-sub' }, 'Market hazırlanıyor. Skin paketleri ve kozmetikler burada yer alacak.'),
+    h('div', { class: 'market-grid' }, ['Skin paketleri', 'Kozmetikler', 'Yakında'].map((t) => h('div', { class: 'market-tile' }, t)))
   );
 }
 

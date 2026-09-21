@@ -19,6 +19,11 @@ function loaderChips(current, onPick) {
 
 /* ---------- Sürümler sayfası ---------- */
 function renderVersions() {
+  if (S.contentFor) {
+    const cp = S.profiles.find((x) => x.id === S.contentFor);
+    if (cp) return renderVersionDetail(cp);
+    S.contentFor = null;
+  }
   loadInstalled().then(() => {
     if (S.page === 'versions') {
       document.querySelectorAll('[data-ver]').forEach((el) => { el.hidden = !S.installed.includes(el.dataset.ver); });
@@ -44,6 +49,7 @@ function renderVersions() {
         p.dirMode === 'own' ? h('span', { class: 'chip', title: 'Bu sürümün kendi klasörü var' }, 'Özel klasör') : null,
         active ? h('span', { class: 'tag accent' }, 'Seçili') : null),
       h('div', { class: 'ver-actions' },
+        h('button', { class: 'btn small primary', onclick: (e) => { e.stopPropagation(); S.contentFor = p.id; render(); } }, 'Mod ve paketler'),
         h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); openProfileModal(p); } }, 'Ayarla'),
         h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); api.profiles.openDir(p.id); } }, 'Klasör'),
         h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); openCleanInstall(p); } }, 'Temiz kurulum'),
@@ -64,7 +70,7 @@ function renderVersions() {
     h('div', { class: 'page-head' },
       h('div', {},
         h('h1', { class: 'page-title' }, 'Sürümler'),
-        h('p', { class: 'page-sub' }, 'Oynamak istediğin Minecraft sürümlerini ekle. Her sürümün belleği, mod yükleyicisi ve klasörü ayrı tutulur. Seçtiğin sürüm ana sayfadan başlar.')),
+        h('p', { class: 'page-sub' }, 'Oynamak istediğin Minecraft sürümlerini ekle. Her sürümün belleği, mod yükleyicisi ve klasörü ayrı tutulur. Mod, texture ve shader yüklemek için kartındaki “Mod ve paketler” düğmesini kullan.')),
       h('button', { class: 'btn primary', onclick: openVersionPicker }, 'Sürüm ekle')),
     h('div', { class: 'ver-grid' }, tiles)
   );

@@ -10,7 +10,9 @@ Electron tabanlı, Feather tarzı bir Minecraft: Java Edition başlatıcısı.
 - Gereken Java sürümünü otomatik indirir (Adoptium)
 - Skin kütüphanesi, 2D/3D önizleme (animasyonlu), pelerin desteği ve Microsoft hesabına skin yükleme
 - Ayarlar (oyun klasörü, Java, bellek, tam ekran, vurgu rengi, animasyonlar, sıfırlama)
-- Market: Modrinth'ten mod, kaynak paketi, gölgelendirici (shader) ve modpack indirme; bağımlılıklar otomatik kurulur
+- Sürümler > "Mod ve paketler": Modrinth'ten mod, kaynak paketi (texture) ve gölgelendirici (shader) indirme; bağımlılıklar otomatik kurulur
+- Sürüm eklerken Modrinth modpack'i kurma
+- Market: şimdilik boş sayfa
 - Fabric ve Quilt mod yükleyici desteği, her sürüme özel klasör, temiz kurulum
 - Otomatik güncelleme (GitHub Releases; depo herkese açık olmalı)
 - Temalar: siyah-sarı (varsayılan), zümrüt, okyanus, menekşe
