@@ -67,7 +67,7 @@ function defaultSettings() {
     theme: 'lemon',
     autoUpdate: true,
     discordRpc: false,
-    discordClientId: '1512842812121415781',
+    discordClientId: '1552034405286027334',
     discordShowServer: true,
     animations: true,
     viewer3d: true,
