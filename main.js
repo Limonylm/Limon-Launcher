@@ -454,10 +454,28 @@ handle('settings:set', async (patch) => {
 });
 
 handle('discord:test', async () => {
-  if (!store.settings.discordClientId.trim()) return { ok: false, error: 'Önce bir Uygulama Kimliği gir.' };
+  const id = store.settings.discordClientId.trim();
+  if (!id) return { ok: false, error: 'Önce bir Uygulama Kimliği gir.' };
+  // Anahtar kapalıyken teste basılması en sık karşılaşılan sorundu: sessizce hiçbir şey yapmıyordu.
+  // Artık teste basmak Discord'da göstermeyi de açar.
+  if (!store.settings.discordRpc) {
+    store.settings.discordRpc = true;
+    saveStore();
+  }
   discord.start();
-  idlePresence();
-  return { ok: true };
+  const connected = await new Promise((resolve) => {
+    if (discord.ready) return resolve(true);
+    const timer = setTimeout(() => { discord.off('ready', onReady); resolve(false); }, 4000);
+    function onReady() { clearTimeout(timer); resolve(true); }
+    discord.once('ready', onReady);
+  });
+  if (connected) idlePresence();
+  return {
+    ok: true,
+    connected,
+    settings: store.settings,
+    error: connected ? null : 'Discord masaüstü uygulaması bulunamadı. Açık olduğundan emin ol (tarayıcı sürümü değil) ve tekrar dene.'
+  };
 });
 
 handle('settings:pick-folder', async () => {

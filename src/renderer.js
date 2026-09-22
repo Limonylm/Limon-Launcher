@@ -718,10 +718,15 @@ function renderSettings() {
   discordIdInput.addEventListener('change', () => setSetting({ discordClientId: discordIdInput.value.trim() }));
   const discordMsg = h('small', {}, '');
   const discordTestBtn = h('button', { class: 'btn', onclick: async () => {
-    discordTestBtn.disabled = true; discordMsg.textContent = 'Deneniyor…';
+    discordTestBtn.disabled = true; discordMsg.textContent = 'Discord\u2019a bağlanılıyor…';
     const r = await api.settings.testDiscord();
     discordTestBtn.disabled = false;
-    discordMsg.textContent = r.ok ? 'İstek gönderildi. Discord açıksa birkaç saniyede görünür.' : r.error;
+    if (!r.ok) { discordMsg.textContent = r.error; return; }
+    if (r.settings) S.settings = r.settings; // teste basmak anahtarı da açtıysa arayüzü güncelle
+    discordMsg.textContent = r.connected
+      ? 'Bağlandı! Discord profiline bak, birkaç saniyede görünür.'
+      : (r.error || 'Bağlanılamadı.');
+    render();
   } }, 'Bağlantıyı dene');
 
   const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
