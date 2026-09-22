@@ -1,6 +1,6 @@
 {
   "name": "limon-launcher",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Limon Launcher - Minecraft başlatıcısı",
   "main": "main.js",
   "author": "Limon",

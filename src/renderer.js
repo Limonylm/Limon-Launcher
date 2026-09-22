@@ -714,6 +714,16 @@ function renderSettings() {
   const jvmInput = h('input', { type: 'text', value: st.globalJvmArgs || '', placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'Genel JVM argümanları' });
   jvmInput.addEventListener('change', () => setSetting({ globalJvmArgs: jvmInput.value.trim() }));
 
+  const discordIdInput = h('input', { type: 'text', value: st.discordClientId || '', placeholder: 'Uygulama Kimliği (Application ID)', autocomplete: 'off', 'aria-label': 'Discord Uygulama Kimliği' });
+  discordIdInput.addEventListener('change', () => setSetting({ discordClientId: discordIdInput.value.trim() }));
+  const discordMsg = h('small', {}, '');
+  const discordTestBtn = h('button', { class: 'btn', onclick: async () => {
+    discordTestBtn.disabled = true; discordMsg.textContent = 'Deneniyor…';
+    const r = await api.settings.testDiscord();
+    discordTestBtn.disabled = false;
+    discordMsg.textContent = r.ok ? 'İstek gönderildi. Discord açıksa birkaç saniyede görünür.' : r.error;
+  } }, 'Bağlantıyı dene');
+
   const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
   const ramVal = h('b', {}, gb(st.defaultMaxRam || 4096) + ' GB');
   const ram = h('input', { type: 'range', min: '1024', max: String(cap), step: '256', value: String(Math.min(st.defaultMaxRam || 4096, cap)), 'aria-label': 'Varsayılan bellek' });
@@ -777,6 +787,17 @@ function renderSettings() {
       row('3D karakter animasyonu', 'Karakter yürür ve yavaşça döner.', sw('viewerAnimation')),
       row('Oyun günlüğünü göster', 'Ana sayfada oyunun çıktısını gösterir.', h('label', { class: 'switch' },
         h('input', { type: 'checkbox', checked: !!st.showLog, onchange: (e) => setSetting({ showLog: e.target.checked }) }), h('span')))
+    ),
+
+    group('Discord', '',
+      row('Discord\u2019da göster', 'Discord\u2019da neyle uğraştığın görünür: menüde ya da oynadığın Minecraft sürümü ve sunucusu.', sw('discordRpc')),
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Uygulama Kimliği'), h('small', {}, 'Discord Geliştirici Portalı\u2019ndan kendi uygulamanı oluşturup buraya Application ID\u2019sini yapıştır.')),
+        h('div', { class: 'row' },
+          h('div', { class: 'grow' }, discordIdInput),
+          h('button', { class: 'btn', onclick: () => api.openExternal('https://discord.com/developers/applications') }, 'Portalı aç'))),
+      row('Sunucu adresini göster', 'Kapatırsan yalnızca \u201cSunucuda oynuyor\u201d yazar, adres görünmez.', sw('discordShowServer')),
+      h('div', { class: 'set-row' }, h('div', { class: 'set-text' }, h('b', {}, 'Bağlantıyı dene'), discordMsg), h('div', { class: 'set-ctl' }, discordTestBtn))
     ),
 
     group('Güncelleme', '',

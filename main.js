@@ -11,6 +11,7 @@ const util = require('./lib/util');
 const loaders = require('./lib/loaders');
 const modrinth = require('./lib/modrinth');
 const updater = require('./lib/updater');
+const { DiscordRPC } = require('./lib/discord-rpc');
 
 let win = null;
 let store = null;
@@ -65,6 +66,9 @@ function defaultSettings() {
     showLog: true,
     theme: 'lemon',
     autoUpdate: true,
+    discordRpc: false,
+    discordClientId: '1512842812121415781',
+    discordShowServer: true,
     animations: true,
     viewer3d: true,
     viewerAnimation: true
@@ -425,6 +429,12 @@ handle('settings:open-data-dir', async () => {
   return { ok: true };
 });
 
+handle('shell:open-external', async (url) => {
+  if (!/^https:\/\/(www\.)?discord\.com\//.test(String(url))) return { ok: false, error: 'İzin verilmeyen bağlantı.' };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
 handle('system:info', async () => ({
   ok: true,
   totalMemMB: Math.floor(os.totalmem() / 1048576),
@@ -436,9 +446,18 @@ handle('versions:installed', async () => ({ ok: true, ids: installedVersions().m
 
 handle('settings:set', async (patch) => {
   const allowed = Object.keys(defaultSettings());
+  const discordTouched = 'discordRpc' in patch || 'discordClientId' in patch || 'discordShowServer' in patch;
   for (const k of allowed) if (k in patch) store.settings[k] = patch[k];
   saveStore();
+  if (discordTouched) refreshDiscord();
   return { ok: true, settings: store.settings };
+});
+
+handle('discord:test', async () => {
+  if (!store.settings.discordClientId.trim()) return { ok: false, error: 'Önce bir Uygulama Kimliği gir.' };
+  discord.start();
+  idlePresence();
+  return { ok: true };
 });
 
 handle('settings:pick-folder', async () => {
@@ -493,8 +512,8 @@ handle('game:launch', async (profileId) => {
   }
 
   const launcher = new Client();
-  launcher.on('debug', (m) => send('game:log', String(m)));
-  launcher.on('data', (m) => send('game:log', String(m)));
+  launcher.on('debug', (m) => { send('game:log', String(m)); watchServerLog(String(m), profile); });
+  launcher.on('data', (m) => { send('game:log', String(m)); watchServerLog(String(m), profile); });
   launcher.on('progress', (p) =>
     send('game:progress', {
       task: 'Dosyalar indiriliyor (' + p.type + ')',
@@ -503,6 +522,7 @@ handle('game:launch', async (profileId) => {
   );
   launcher.on('close', (code) => {
     running = null;
+    idlePresence();
     send('game:state', { state: 'idle', code });
     if (win && !win.isDestroyed() && store.settings.minimizeOnLaunch) {
       win.restore();
@@ -530,6 +550,7 @@ handle('game:launch', async (profileId) => {
   }
 
   running = proc;
+  playingPresence(profile);
   send('game:state', { state: 'running' });
   if (store.settings.minimizeOnLaunch && win) win.minimize();
   return { ok: true };
@@ -540,6 +561,54 @@ handle('game:stop', async () => {
   return { ok: true };
 });
 
+
+/* ------------------------------------------------------------------ */
+/* Discord Rich Presence                                               */
+/* ------------------------------------------------------------------ */
+const discord = new DiscordRPC(() => (store.settings.discordRpc ? store.settings.discordClientId.trim() : ''));
+const appStartedAt = Date.now();
+let currentServer = '';
+
+function idlePresence() {
+  discord.setActivity({ details: 'Menüde geziniyor', startTimestamp: appStartedAt, largeImageKey: 'lemon', largeImageText: 'Limon Launcher' });
+}
+function playingPresence(profile) {
+  currentServer = '';
+  const loaderTxt = profile.loader && profile.loader !== 'vanilla' ? ' (' + (profile.loader === 'fabric' ? 'Fabric' : 'Quilt') + ')' : '';
+  discord.setActivity({
+    details: 'Minecraft ' + profile.version + loaderTxt,
+    state: profile.name,
+    startTimestamp: Date.now(),
+    largeImageKey: 'lemon',
+    largeImageText: 'Limon Launcher'
+  });
+}
+function refreshDiscord() {
+  if (store.settings.discordRpc && store.settings.discordClientId.trim()) {
+    discord.start();
+    idlePresence();
+  } else {
+    discord.clearActivity();
+    discord.stop();
+  }
+}
+
+/* Oyun günlüğünde sunucu bağlantısını yakalar (ör. "Connecting to play.example.com, 25565"). */
+function watchServerLog(line, profile) {
+  if (!store.settings.discordShowServer) return;
+  const m = /Connecting to ([^,]+),\s*(\d+)/i.exec(line);
+  if (!m) return;
+  const server = store.settings.discordShowServer ? `${m[1]}:${m[2]}` : 'bir sunucu';
+  if (server === currentServer) return;
+  currentServer = server;
+  discord.setActivity({
+    details: 'Minecraft ' + profile.version,
+    state: 'Sunucuda: ' + server,
+    startTimestamp: Date.now(),
+    largeImageKey: 'lemon',
+    largeImageText: 'Limon Launcher'
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* Kurulum yönetimi                                                    */
@@ -893,7 +962,9 @@ if (!gotLock) {
     });
     createWindow();
     win.webContents.once('did-finish-load', () => setTimeout(autoUpdateCheck, 3500));
+    refreshDiscord();
   });
 
   app.on('window-all-closed', () => app.quit());
+app.on('before-quit', () => { discord.clearActivity(); discord.stop(); });
 }

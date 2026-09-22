@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('limon', {
     close: () => ipcRenderer.send('win:close')
   },
   versions: inv('versions:list'),
+  openExternal: inv('shell:open-external'),
   installedVersions: inv('versions:installed'),
   system: inv('system:info'),
   accounts: {
@@ -34,7 +35,8 @@ contextBridge.exposeInMainWorld('limon', {
     pickJava: inv('settings:pick-java'),
     openGameDir: inv('settings:open-game-dir'),
     openDataDir: inv('settings:open-data-dir'),
-    reset: inv('settings:reset')
+    reset: inv('settings:reset'),
+    testDiscord: inv('discord:test')
   },
   skins: {
     list: inv('skins:list'),

@@ -16,6 +16,7 @@ Electron tabanlı, Feather tarzı bir Minecraft: Java Edition başlatıcısı.
 - Fabric ve Quilt mod yükleyici desteği, her sürüme özel klasör, temiz kurulum
 - Otomatik güncelleme (GitHub Releases; depo herkese açık olmalı)
 - Temalar: siyah-sarı (varsayılan), zümrüt, okyanus, menekşe
+- Discord Rich Presence: menüde ya da oynanan Minecraft sürümü/sunucusu Discord'da görünür (kendi Discord Uygulama Kimliğini gerektirir, Ayarlar > Discord)
 
 ## EXE'yi derleme
 
