@@ -714,15 +714,16 @@ function renderSettings() {
   const jvmInput = h('input', { type: 'text', value: st.globalJvmArgs || '', placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'Genel JVM argümanları' });
   jvmInput.addEventListener('change', () => setSetting({ globalJvmArgs: jvmInput.value.trim() }));
 
-  const discordMsg = h('small', {}, '');
+  // Test mesajı sayfa yeniden çizilince kaybolmasın diye kalıcı durumda tutulur (asıl "gel-git" sorunu buydu).
+  const discordMsg = h('small', {}, S.discordTestMsg || '');
   const discordTestBtn = h('button', { class: 'btn', onclick: async () => {
-    discordTestBtn.disabled = true; discordMsg.textContent = 'Discord\u2019a bağlanılıyor…';
+    discordTestBtn.disabled = true; S.discordTestMsg = 'Discord\u2019a bağlanılıyor…'; discordMsg.textContent = S.discordTestMsg;
     const r = await api.settings.testDiscord();
     discordTestBtn.disabled = false;
-    if (!r.ok) { discordMsg.textContent = r.error; return; }
+    if (!r.ok) { S.discordTestMsg = r.error; discordMsg.textContent = S.discordTestMsg; return; }
     if (r.settings) S.settings = r.settings; // teste basmak anahtarı da açtıysa arayüzü güncelle
-    discordMsg.textContent = r.connected
-      ? 'Bağlandı! Discord profiline bak, birkaç saniyede görünür.'
+    S.discordTestMsg = r.connected
+      ? 'Bağlandı! Discord profiline bak, 20-25 saniyeye kadar sürebilir.'
       : (r.error || 'Bağlanılamadı.');
     render();
   } }, 'Bağlantıyı dene');
