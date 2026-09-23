@@ -1,5 +1,5 @@
 // Limon Launcher - ana süreç (Electron main process)
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, Menu, session, Tray } = require('electron');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -66,9 +66,11 @@ function defaultSettings() {
     showLog: true,
     theme: 'lemon',
     autoUpdate: true,
-    discordRpc: false,
+    discordRpc: true,
     discordClientId: '1552034405286027334',
     discordShowServer: true,
+    launchAtStartup: false,
+    minimizeToTray: false,
     animations: true,
     viewer3d: true,
     viewerAnimation: true
@@ -445,11 +447,14 @@ handle('system:info', async () => ({
 handle('versions:installed', async () => ({ ok: true, ids: installedVersions().map((v) => v.id) }));
 
 handle('settings:set', async (patch) => {
-  const allowed = Object.keys(defaultSettings());
+  // discordClientId kilitli: yalnızca kod içinden değişir, ayarlar üzerinden değiştirilemez.
+  const allowed = Object.keys(defaultSettings()).filter((k) => k !== 'discordClientId');
   const discordTouched = 'discordRpc' in patch || 'discordClientId' in patch || 'discordShowServer' in patch;
   for (const k of allowed) if (k in patch) store.settings[k] = patch[k];
   saveStore();
   if (discordTouched) refreshDiscord();
+  if ('launchAtStartup' in patch) applyLaunchAtStartup();
+  if ('minimizeToTray' in patch) { if (store.settings.minimizeToTray) ensureTray(); else destroyTray(); }
   return { ok: true, settings: store.settings };
 });
 
@@ -579,6 +584,33 @@ handle('game:stop', async () => {
   return { ok: true };
 });
 
+
+function applyLaunchAtStartup() {
+  if (!app.isPackaged) return; // geliştirme ortamında anlamsız, sadece paketli uygulamada işe yarar
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!store.settings.launchAtStartup, path: process.execPath });
+  } catch { /* bazı ortamlarda desteklenmeyebilir, sessizce geç */ }
+}
+
+let tray = null;
+function ensureTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, 'build', 'icon.png'));
+  } catch {
+    return; // simge okunamazsa tepsi olmadan devam et
+  }
+  tray.setToolTip('Limon Launcher');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Aç', click: () => { if (win) { win.show(); win.focus(); } } },
+    { type: 'separator' },
+    { label: 'Çıkış', click: () => { app.isQuitting = true; app.quit(); } }
+  ]));
+  tray.on('click', () => { if (win) { win.show(); win.focus(); } });
+}
+function destroyTray() {
+  if (tray) { tray.destroy(); tray = null; }
+}
 
 /* ------------------------------------------------------------------ */
 /* Discord Rich Presence                                               */
@@ -953,6 +985,12 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.on('close', (e) => {
+    if (!app.isQuitting && store.settings.minimizeToTray) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
   win.on('closed', () => {
     win = null;
   });
@@ -973,6 +1011,8 @@ if (!gotLock) {
     storeFile = path.join(app.getPath('userData'), 'limon-data.json');
     skinDir = path.join(app.getPath('userData'), 'skins');
     loadStore();
+    applyLaunchAtStartup();
+    if (store.settings.minimizeToTray) ensureTray();
     Menu.setApplicationMenu(null);
     session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, cb) => {
       details.requestHeaders['Accept-Language'] = 'tr-TR,tr;q=0.9,en;q=0.6';

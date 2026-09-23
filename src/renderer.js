@@ -714,8 +714,6 @@ function renderSettings() {
   const jvmInput = h('input', { type: 'text', value: st.globalJvmArgs || '', placeholder: 'Örn: -XX:+UseG1GC', 'aria-label': 'Genel JVM argümanları' });
   jvmInput.addEventListener('change', () => setSetting({ globalJvmArgs: jvmInput.value.trim() }));
 
-  const discordIdInput = h('input', { type: 'text', value: st.discordClientId || '', placeholder: 'Uygulama Kimliği (Application ID)', autocomplete: 'off', 'aria-label': 'Discord Uygulama Kimliği' });
-  discordIdInput.addEventListener('change', () => setSetting({ discordClientId: discordIdInput.value.trim() }));
   const discordMsg = h('small', {}, '');
   const discordTestBtn = h('button', { class: 'btn', onclick: async () => {
     discordTestBtn.disabled = true; discordMsg.textContent = 'Discord\u2019a bağlanılıyor…';
@@ -794,13 +792,13 @@ function renderSettings() {
         h('input', { type: 'checkbox', checked: !!st.showLog, onchange: (e) => setSetting({ showLog: e.target.checked }) }), h('span')))
     ),
 
+    group('Launcher', '',
+      row('Windows ile başlat', 'Bilgisayar açılınca Limon Launcher kendiliğinden çalışır.', sw('launchAtStartup')),
+      row('Kapatınca sistem tepsisine küçült', 'Pencereyi kapatmak launcher\u2019ı tamamen kapatmaz, sistem tepsisinde bekletir. Tamamen kapatmak için tepsi simgesinden \u201cÇıkış\u201d\u2019a bas.', sw('minimizeToTray'))
+    ),
+
     group('Discord', '',
       row('Discord\u2019da göster', 'Discord\u2019da neyle uğraştığın görünür: menüde ya da oynadığın Minecraft sürümü ve sunucusu.', sw('discordRpc')),
-      h('div', { class: 'set-row stack' },
-        h('div', { class: 'set-text' }, h('b', {}, 'Uygulama Kimliği'), h('small', {}, 'Discord Geliştirici Portalı\u2019ndan kendi uygulamanı oluşturup buraya Application ID\u2019sini yapıştır.')),
-        h('div', { class: 'row' },
-          h('div', { class: 'grow' }, discordIdInput),
-          h('button', { class: 'btn', onclick: () => api.openExternal('https://discord.com/developers/applications') }, 'Portalı aç'))),
       row('Sunucu adresini göster', 'Kapatırsan yalnızca \u201cSunucuda oynuyor\u201d yazar, adres görünmez.', sw('discordShowServer')),
       h('div', { class: 'set-row' }, h('div', { class: 'set-text' }, h('b', {}, 'Bağlantıyı dene'), discordMsg), h('div', { class: 'set-ctl' }, discordTestBtn))
     ),

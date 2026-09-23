@@ -1,6 +1,6 @@
 {
   "name": "limon-launcher",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Limon Launcher - Minecraft başlatıcısı",
   "main": "main.js",
   "author": "Limon",
@@ -26,7 +26,8 @@
       "preload.js",
       "lib/**/*",
       "src/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "directories": {
       "buildResources": "build",
