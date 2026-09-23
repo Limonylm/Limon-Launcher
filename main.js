@@ -468,11 +468,15 @@ handle('discord:test', async () => {
     saveStore();
   }
   discord.start();
+  // Tahmini bir süre bekleyip vazgeçmek yerine, bağlanma denemesinin gerçek sonucunu bekle
+  // (10 boruyu taramak Discord kapalıyken bile birkaç saniye sürebiliyordu, sabit 4sn bu yüzden yanıltıyordu).
   const connected = await new Promise((resolve) => {
     if (discord.ready) return resolve(true);
-    const timer = setTimeout(() => { discord.off('ready', onReady); resolve(false); }, 4000);
-    function onReady() { clearTimeout(timer); resolve(true); }
+    const cleanup = () => { discord.off('ready', onReady); discord.off('attempt-failed', onFail); };
+    const onReady = () => { cleanup(); resolve(true); };
+    const onFail = () => { cleanup(); resolve(false); };
     discord.once('ready', onReady);
+    discord.once('attempt-failed', onFail);
   });
   if (connected) idlePresence();
   return {
