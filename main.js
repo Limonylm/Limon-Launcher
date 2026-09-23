@@ -437,6 +437,8 @@ handle('shell:open-external', async (url) => {
   return { ok: true };
 });
 
+handle('discord:log', async () => ({ ok: true, log: discordLog }));
+
 handle('system:info', async () => ({
   ok: true,
   totalMemMB: Math.floor(os.totalmem() / 1048576),
@@ -622,6 +624,19 @@ function destroyTray() {
 const discord = new DiscordRPC(() => (store.settings.discordRpc ? store.settings.discordClientId.trim() : ''));
 const appStartedAt = Date.now();
 let currentServer = '';
+
+// Bağlan/kop döngüsünü teşhis etmek için: her olayı saatiyle birlikte sakla ve arayüze gönder.
+const discordLog = [];
+function logDiscord(text) {
+  const line = new Date().toLocaleTimeString('tr-TR') + '  ' + text;
+  discordLog.push(line);
+  if (discordLog.length > 100) discordLog.shift();
+  send('discord:log', line);
+}
+discord.on('ready', () => logDiscord('Bağlandı (READY)'));
+discord.on('disconnect', () => logDiscord('Bağlantı koptu'));
+discord.on('attempt-failed', () => logDiscord('Discord bulunamadı, yeniden denenecek'));
+discord.on('error', (e) => logDiscord('Hata: ' + JSON.stringify(e)));
 
 function idlePresence() {
   discord.setActivity({ details: 'Menüde geziniyor', startTimestamp: appStartedAt, largeImageKey: 'lemon', largeImageText: 'Limon Launcher' });

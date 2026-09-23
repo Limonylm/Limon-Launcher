@@ -64,6 +64,10 @@ contextBridge.exposeInMainWorld('limon', {
     onProgress: on('update:progress'),
     onError: on('update:error')
   },
+  discordLog: {
+    get: inv('discord:log'),
+    onLine: on('discord:log')
+  },
   capes: {
     set: inv('capes:set')
   },

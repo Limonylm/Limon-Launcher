@@ -728,6 +728,17 @@ function renderSettings() {
     render();
   } }, 'Bağlantıyı dene');
 
+  const discordLogBox = h('pre', { class: 'log', style: 'height:110px;margin-top:8px' });
+  const refreshDiscordLog = (r) => { discordLogBox.textContent = (r.log || []).join('\n'); discordLogBox.scrollTop = discordLogBox.scrollHeight; };
+  api.discordLog.get().then(refreshDiscordLog);
+  if (!S.discordLogBound) {
+    S.discordLogBound = true;
+    api.discordLog.onLine((line) => {
+      const box = document.querySelector('.log[style*="110px"]');
+      if (box) { box.textContent += (box.textContent ? '\n' : '') + line; box.scrollTop = box.scrollHeight; }
+    });
+  }
+
   const cap = Math.min(32768, Math.max(2048, Math.floor((S.sys.totalMemMB - 1024) / 512) * 512));
   const ramVal = h('b', {}, gb(st.defaultMaxRam || 4096) + ' GB');
   const ram = h('input', { type: 'range', min: '1024', max: String(cap), step: '256', value: String(Math.min(st.defaultMaxRam || 4096, cap)), 'aria-label': 'Varsayılan bellek' });
@@ -801,7 +812,10 @@ function renderSettings() {
     group('Discord', '',
       row('Discord\u2019da göster', 'Discord\u2019da neyle uğraştığın görünür: menüde ya da oynadığın Minecraft sürümü ve sunucusu.', sw('discordRpc')),
       row('Sunucu adresini göster', 'Kapatırsan yalnızca \u201cSunucuda oynuyor\u201d yazar, adres görünmez.', sw('discordShowServer')),
-      h('div', { class: 'set-row' }, h('div', { class: 'set-text' }, h('b', {}, 'Bağlantıyı dene'), discordMsg), h('div', { class: 'set-ctl' }, discordTestBtn))
+      h('div', { class: 'set-row' }, h('div', { class: 'set-text' }, h('b', {}, 'Bağlantıyı dene'), discordMsg), h('div', { class: 'set-ctl' }, discordTestBtn)),
+      h('div', { class: 'set-row stack' },
+        h('div', { class: 'set-text' }, h('b', {}, 'Bağlantı günlüğü'), h('small', {}, 'Bağlandı/koptu zamanlarını gösterir, bir sorun olduğunda bunu bana gönder.')),
+        discordLogBox)
     ),
 
     group('Güncelleme', '',
