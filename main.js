@@ -637,6 +637,7 @@ discord.on('ready', () => logDiscord('Bağlandı (READY)'));
 discord.on('disconnect', () => logDiscord('Bağlantı koptu'));
 discord.on('attempt-failed', () => logDiscord('Discord bulunamadı, yeniden denenecek'));
 discord.on('error', (e) => logDiscord('Hata: ' + JSON.stringify(e)));
+discord.on('socket-error', (e) => logDiscord('Soket hatası: ' + ((e && (e.code || e.message)) || e)));
 
 function idlePresence() {
   discord.setActivity({ details: 'Menüde geziniyor', startTimestamp: appStartedAt, largeImageKey: 'lemon', largeImageText: 'Limon Launcher' });
