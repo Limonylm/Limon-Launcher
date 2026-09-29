@@ -1,7 +1,5 @@
 # Limon Launcher
 
-Electron tabanlı, Feather tarzı bir Minecraft: Java Edition başlatıcısı.
-
 ## Özellikler
 - Microsoft hesabıyla giriş (yenileme token'ı Windows tarafından şifrelenerek saklanır)
 - Çevrimdışı (korsan) hesapla oynama
