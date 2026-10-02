@@ -686,11 +686,23 @@ function renderSkins() {
 }
 
 /* ---------- Market ---------- */
+const MARKET_EMOJIS = [
+  ['🍋', 'Limon'],
+  ['⚔️', 'Kılıç'],
+  ['💎', 'Elmas'],
+  ['🧱', 'Blok'],
+  ['🎮', 'Oyun']
+];
+
 function renderMarket() {
   return h('section', {},
     h('h1', { class: 'page-title' }, 'Market'),
     h('p', { class: 'page-sub' }, 'Market hazırlanıyor. Skin paketleri ve kozmetikler burada yer alacak.'),
-    h('div', { class: 'market-grid' }, ['Skin paketleri', 'Kozmetikler', 'Yakında'].map((t) => h('div', { class: 'market-tile' }, t)))
+    h('div', { class: 'market-grid' }, ['Skin paketleri', 'Kozmetikler', 'Yakında'].map((t) => h('div', { class: 'market-tile' }, t))),
+    h('h2', { style: 'margin-top:28px' }, 'Emojiler'),
+    h('p', { class: 'page-sub' }, 'Yakında sunucunda kullanabileceğin emoji paketleri.'),
+    h('div', { class: 'emoji-grid' }, MARKET_EMOJIS.map(([emoji, label]) =>
+      h('div', { class: 'emoji-card' }, h('div', { class: 'emoji-big' }, emoji), h('div', {}, label))))
   );
 }
 

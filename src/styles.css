@@ -330,6 +330,15 @@ details.adv summary:hover { color: var(--text); }
 .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 8px; }
 .market-tile { height: 150px; border-radius: 16px; border: 1px dashed var(--line); display: grid; place-items: center; color: var(--surface-3); font-family: var(--display); font-size: 18px; }
 
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; margin-top: 8px; }
+.emoji-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 10px;
+  border-radius: 16px; background: linear-gradient(160deg, var(--surface-2), var(--surface-1));
+  border: 1px solid var(--line); color: var(--muted); font-size: 13px; transition: border-color .15s, transform .15s;
+}
+.emoji-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.emoji-big { font-size: 40px; line-height: 1; }
+
 /* ---------- Modal & toast ---------- */
 .backdrop { position: fixed; inset: 0; background: rgba(2, 10, 7, .74); display: grid; place-items: center; z-index: 10; }
 .modal { width: min(540px, calc(100vw - 48px)); max-height: calc(100vh - 60px); overflow-y: auto; background: var(--bg-1); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }

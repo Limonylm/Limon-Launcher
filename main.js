@@ -647,7 +647,8 @@ function playingPresence(profile) {
   const loaderTxt = profile.loader && profile.loader !== 'vanilla' ? ' (' + (profile.loader === 'fabric' ? 'Fabric' : 'Quilt') + ')' : '';
   discord.setActivity({
     details: 'Minecraft ' + profile.version + loaderTxt,
-    state: profile.name,
+    // Profilin adı genelde "Minecraft 1.21.1" gibi olduğu için sürüm yazısı iki kez tekrar ediyordu.
+    // Sunucuya girilene kadar ikinci satır boş kalır, girince watchServerLog "Sunucuda: ip" yazar.
     startTimestamp: Date.now(),
     largeImageKey: 'lemon',
     largeImageText: 'Limon Launcher'
@@ -665,15 +666,17 @@ function refreshDiscord() {
 
 /* Oyun günlüğünde sunucu bağlantısını yakalar (ör. "Connecting to play.example.com, 25565"). */
 function watchServerLog(line, profile) {
-  if (!store.settings.discordShowServer) return;
   const m = /Connecting to ([^,]+),\s*(\d+)/i.exec(line);
   if (!m) return;
-  const server = store.settings.discordShowServer ? `${m[1]}:${m[2]}` : 'bir sunucu';
-  if (server === currentServer) return;
-  currentServer = server;
+  const address = `${m[1]}:${m[2]}`;
+  if (address === currentServer) return;
+  currentServer = address;
+  const loaderTxt = profile.loader && profile.loader !== 'vanilla' ? ' (' + (profile.loader === 'fabric' ? 'Fabric' : 'Quilt') + ')' : '';
+  // "Sunucu adresini göster" kapalıyken de bir şeyler göstermesi lazımdı; eskiden sessizce hiçbir şey yapmıyordu.
+  const state = store.settings.discordShowServer ? 'Sunucuda: ' + address : 'Sunucuda oynuyor';
   discord.setActivity({
-    details: 'Minecraft ' + profile.version,
-    state: 'Sunucuda: ' + server,
+    details: 'Minecraft ' + profile.version + loaderTxt,
+    state,
     startTimestamp: Date.now(),
     largeImageKey: 'lemon',
     largeImageText: 'Limon Launcher'
